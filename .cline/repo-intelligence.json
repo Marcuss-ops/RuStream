@@ -1,0 +1,18 @@
+{
+  "workspacePath": "/home/pierone/Pyt/VeloxEditing/refactored/RustStream",
+  "projectType": "unknown",
+  "entrypoints": [],
+  "testCommands": [],
+  "buildCommands": [],
+  "lintCommands": [],
+  "devCommands": [],
+  "criticalConfigs": [
+    "README.md"
+  ],
+  "generatedPaths": [],
+  "sensitivePaths": [
+    "scripts"
+  ],
+  "circularDependencies": [],
+  "lastUpdated": 1774783664469
+}
