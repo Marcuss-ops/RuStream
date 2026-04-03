@@ -3,18 +3,25 @@ name: CI
 on:
   push:
     branches: [main, master]
+    tags: ["v*"]
   pull_request:
     branches: [main, master]
   release:
     types: [published]
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
 
+defaults:
+  run:
+    working-directory: ruststream-core
+
 jobs:
-  # Check formatting and code quality
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -27,21 +34,27 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libavcodec-dev libavformat-dev libavutil-dev \
+            libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('ruststream-core/Cargo.lock') }}
 
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-  # Security audit
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -58,7 +71,6 @@ jobs:
       - name: Run security audit
         run: cargo audit
 
-  # Check for outdated dependencies
   outdated:
     name: Check Outdated Dependencies
     runs-on: ubuntu-latest
@@ -76,7 +88,6 @@ jobs:
       - name: Run cargo outdated
         run: cargo outdated --root-deps-only --exit-code 1 || true
 
-  # Run tests
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -88,10 +99,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install FFmpeg (for ffmpeg-next)
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
+          sudo apt-get install -y \
+            libavcodec-dev libavformat-dev libavutil-dev \
+            libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -99,21 +112,20 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('ruststream-core/Cargo.lock') }}
 
       - name: Cache target directory
         uses: actions/cache@v4
         with:
-          path: target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          path: ruststream-core/target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('ruststream-core/Cargo.lock') }}
 
       - name: Run tests
-        run: cargo test --workspace --all-features -- --nocapture
+        run: cargo test --all-features -- --nocapture
 
       - name: Run doc tests
-        run: cargo test --workspace --doc
+        run: cargo test --doc
 
-  # Build on multiple platforms
   build:
     name: Build (${{ matrix.target }})
     runs-on: ubuntu-latest
@@ -141,7 +153,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('ruststream-core/Cargo.lock') }}
 
       - name: Build release
         run: cross build --release --target ${{ matrix.target }}
@@ -151,10 +163,9 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: velox-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/velox
+          name: ruststream-${{ matrix.target }}
+          path: ruststream-core/target/${{ matrix.target }}/release/ruststream
 
-  # Build with all features
   build-all-features:
     name: Build All Features
     runs-on: ubuntu-latest
@@ -169,12 +180,13 @@ jobs:
       - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
+          sudo apt-get install -y \
+            libavcodec-dev libavformat-dev libavutil-dev \
+            libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
 
       - name: Build with all features
         run: cargo build --release --all-features
 
-  # Coverage reporting
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -195,7 +207,9 @@ jobs:
       - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
+          sudo apt-get install -y \
+            libavcodec-dev libavformat-dev libavutil-dev \
+            libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
 
       - name: Generate coverage report
         run: cargo llvm-cov --all-features --lcov --output-path lcov.info
@@ -203,10 +217,9 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: lcov.info
+          files: ruststream-core/lcov.info
           fail_ci_if_error: false
 
-  # Benchmark (on release)
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
@@ -221,76 +234,9 @@ jobs:
       - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
+          sudo apt-get install -y \
+            libavcodec-dev libavformat-dev libavutil-dev \
+            libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
 
       - name: Run benchmarks
-        run: cargo bench --all-features
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: target/criterion
-
-  # Create release with binaries
-  release:
-    name: Release Build
-    needs: [lint, test, build]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
-
-      - name: Build release binaries
-        run: |
-          cargo build --release --target x86_64-unknown-linux-gnu
-          cargo build --release --target aarch64-unknown-linux-gnu
-
-      - name: Package binaries
-        run: |
-          tar czf velox-x86_64-unknown-linux-gnu.tar.gz -C target/x86_64-unknown-linux-gnu/release velox
-          tar czf velox-aarch64-unknown-linux-gnu.tar.gz -C target/aarch64-unknown-linux-gnu/release velox
-
-      - name: Create checksums
-        run: |
-          sha256sum velox-x86_64-unknown-linux-gnu.tar.gz > velox-x86_64-unknown-linux-gnu.tar.gz.sha256
-          sha256sum velox-aarch64-unknown-linux-gnu.tar.gz > velox-aarch64-unknown-linux-gnu.tar.gz.sha256
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            velox-x86_64-unknown-linux-gnu.tar.gz
-            velox-aarch64-unknown-linux-gnu.tar.gz
-            velox-x86_64-unknown-linux-gnu.tar.gz.sha256
-            velox-aarch64-unknown-linux-gnu.tar.gz.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Publish to crates.io (on release)
-  publish:
-    name: Publish to crates.io
-    needs: [release]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        working-directory: src
+        run: cargo bench
