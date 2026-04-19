@@ -1,37 +1,48 @@
 # RuStream Core
 
-High-performance video and audio processing engine for headless media workflows in Rust.
+The main Rust crate behind RuStream for probing media, clip concatenation, and backend-oriented rendering workflows.
 
 [![CI](https://github.com/Marcuss-ops/RuStream/actions/workflows/ci.yml/badge.svg)](https://github.com/Marcuss-ops/RuStream/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/crates/v/ruststream-core.svg)](https://crates.io/crates/ruststream-core)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75+-orange.svg)](https://rustup.rs/)
 
-## What it is
+## Why this crate exists
 
-`ruststream-core` is the main crate behind RuStream.
-It provides a CLI-first media engine for probing, concatenation, rendering workflows, and backend integration.
+`ruststream-core` is meant for CLI and server-side media automation where startup time, predictable memory use, and straightforward integration matter more than GUI features.
 
-## Current architecture
+Use it when you want to:
+- probe media metadata from scripts or workers
+- concatenate clips from a native Rust binary
+- embed media operations in backend pipelines
+- keep orchestration in Rust while still using FFmpeg where needed today
 
-This crate is Rust-first, but it is not yet fully FFmpeg-free.
-Today it uses native Rust modules where practical and FFmpeg bindings where the media stack still needs them.
+## Current status
 
-## Installation
+This crate is Rust-first, but it is not fully FFmpeg-free yet.
+Some paths use native Rust modules directly, while other parts still depend on FFmpeg development libraries and bindings.
 
-### From source
+## What is included today
+
+- probe APIs for media metadata extraction
+- CLI commands for probe, concat, benchmark, and info
+- optional HTTP server support behind a feature flag
+- SIMD-oriented audio processing components
+- integration tests and CI coverage at the repository level
+
+## Build requirements
+
+- Rust 1.75+
+- FFmpeg 5.0+ development libraries
+- Linux, macOS, or Windows via supported native toolchains or WSL
+
+### Build from source
 
 ```bash
 git clone https://github.com/Marcuss-ops/RuStream.git
 cd RuStream/ruststream-core
 cargo build --release
 ```
-
-### System requirements
-
-- Rust 1.75+
-- FFmpeg 5.0+ development libraries
-- Linux, macOS, or Windows via WSL/native toolchains where supported
 
 ## Common commands
 
@@ -42,22 +53,20 @@ ruststream benchmark --duration 10
 ruststream info
 ```
 
-## Development workflow
+## Development
 
 ```bash
-cargo test --all
-cargo clippy --all-targets --all-features
 cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all
+cargo build --release
 ```
 
-## Repository links
+## Related docs
 
-- Main project: [github.com/Marcuss-ops/RuStream](https://github.com/Marcuss-ops/RuStream)
-- Issues: [github.com/Marcuss-ops/RuStream/issues](https://github.com/Marcuss-ops/RuStream/issues)
-
-## Contributing
-
-See the repository-level [CONTRIBUTING.md](../CONTRIBUTING.md).
+- repository overview: [`../README.md`](../README.md)
+- contribution guide: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+- CI workflow: [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 
 ## License
 
