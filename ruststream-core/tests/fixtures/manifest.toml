@@ -1,0 +1,22 @@
+# Test fixture manifest for ruststream-core
+
+[[fixture]]
+name = "invalid-bin"
+path = "invalid.bin"
+kind = "invalid"
+purpose = "Exercise invalid-media and decode error paths"
+status = "planned"
+
+[[fixture]]
+name = "sample-wav"
+path = "sample.wav"
+kind = "audio"
+purpose = "Probe and decode smoke tests"
+status = "planned"
+
+[[fixture]]
+name = "sample-mp4"
+path = "sample.mp4"
+kind = "video"
+purpose = "Metadata and concat smoke tests"
+status = "planned"
