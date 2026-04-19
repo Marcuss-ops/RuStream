@@ -268,3 +268,147 @@ mod tests {
         assert_eq!(b.len(), BLOCK_SAMPLES);
     }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// AlignedF32Buffer — 64-byte aligned f32 storage for aligned SIMD loads
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Use this type when you need to guarantee that a buffer starts on a
+// 64-byte cache-line boundary.  On AVX-512 this enables using
+// `_mm512_load_ps` (aligned) instead of `_mm512_loadu_ps`, and eliminates
+// any potential cache-line split on all x86_64/AArch64 microarchitectures.
+
+use std::alloc::{alloc_zeroed, dealloc, Layout};
+
+/// Cache-line size (64 bytes on all modern x86_64 / ARM64 CPUs).
+pub const CACHE_LINE: usize = 64;
+
+/// A heap-allocated `[f32]` guaranteed to start on a 64-byte cache-line boundary.
+///
+/// # Example
+/// ```rust,ignore
+/// let mut buf = AlignedF32Buffer::new(FRAME_SAMPLES);
+/// audio_mix(buf.as_mut_slice(), &inputs, &volumes);
+/// assert!(buf.is_aligned());
+/// ```
+pub struct AlignedF32Buffer {
+    ptr: std::ptr::NonNull<f32>,
+    len: usize,
+    layout: Layout,
+}
+
+// SAFETY: AlignedF32Buffer owns its allocation exclusively.
+unsafe impl Send for AlignedF32Buffer {}
+unsafe impl Sync for AlignedF32Buffer {}
+
+impl AlignedF32Buffer {
+    /// Allocate a zeroed f32 buffer of `len` elements with 64-byte alignment.
+    ///
+    /// # Panics
+    /// Panics if `len == 0` or if OOM.
+    pub fn new(len: usize) -> Self {
+        assert!(len > 0, "AlignedF32Buffer: len must be > 0");
+        let base   = Layout::array::<f32>(len).expect("layout overflow");
+        let layout = base.align_to(CACHE_LINE).expect("alignment overflow");
+        let raw    = unsafe { alloc_zeroed(layout) } as *mut f32;
+        let ptr    = std::ptr::NonNull::new(raw).expect("OOM");
+        debug_assert_eq!(ptr.as_ptr() as usize % CACHE_LINE, 0);
+        Self { ptr, len, layout }
+    }
+
+    /// `true` if the buffer pointer is 64-byte aligned (invariant: always true).
+    #[inline(always)]
+    pub fn is_aligned(&self) -> bool {
+        self.ptr.as_ptr() as usize % CACHE_LINE == 0
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[f32] {
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [f32] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+    }
+
+    #[inline] pub fn len(&self)      -> usize  { self.len }
+    #[inline] pub fn is_empty(&self) -> bool   { self.len == 0 }
+    #[inline] pub fn as_ptr(&self)   -> *const f32 { self.ptr.as_ptr() }
+    #[inline] pub fn as_mut_ptr(&mut self) -> *mut f32 { self.ptr.as_ptr() }
+
+    /// Zero-fill in place (f32 zero == 0x00000000).
+    #[inline]
+    pub fn zero_fill(&mut self) {
+        unsafe { std::ptr::write_bytes(self.ptr.as_ptr(), 0, self.len) };
+    }
+}
+
+impl Drop for AlignedF32Buffer {
+    fn drop(&mut self) {
+        unsafe { dealloc(self.ptr.as_ptr() as *mut u8, self.layout) };
+    }
+}
+
+impl std::ops::Deref for AlignedF32Buffer {
+    type Target = [f32];
+    fn deref(&self) -> &Self::Target { self.as_slice() }
+}
+
+impl std::ops::DerefMut for AlignedF32Buffer {
+    fn deref_mut(&mut self) -> &mut Self::Target { self.as_mut_slice() }
+}
+
+#[cfg(test)]
+mod aligned_tests {
+    use super::*;
+
+    #[test]
+    fn test_aligned_allocation_frame() {
+        let buf = AlignedF32Buffer::new(FRAME_SAMPLES);
+        assert!(buf.is_aligned());
+        assert_eq!(buf.len(), FRAME_SAMPLES);
+    }
+
+    #[test]
+    fn test_aligned_allocation_block() {
+        let buf = AlignedF32Buffer::new(BLOCK_SAMPLES);
+        assert!(buf.is_aligned());
+    }
+
+    #[test]
+    fn test_aligned_zeroed() {
+        let buf = AlignedF32Buffer::new(64);
+        assert!(buf.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_aligned_write_read() {
+        let mut buf = AlignedF32Buffer::new(16);
+        for (i, x) in buf.as_mut_slice().iter_mut().enumerate() {
+            *x = i as f32;
+        }
+        assert!((buf[0] - 0.0).abs() < 1e-9);
+        assert!((buf[15] - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_aligned_zero_fill() {
+        let mut buf = AlignedF32Buffer::new(32);
+        buf.as_mut_slice().fill(1.0);
+        buf.zero_fill();
+        assert!(buf.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_aligned_ptr_invariant_multiple_sizes() {
+        for size in [16usize, 64, 1024, 9600, 48000] {
+            let buf = AlignedF32Buffer::new(size);
+            assert_eq!(
+                buf.as_ptr() as usize % CACHE_LINE, 0,
+                "size={size} not 64-byte aligned"
+            );
+        }
+    }
+}
+

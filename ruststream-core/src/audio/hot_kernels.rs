@@ -32,6 +32,8 @@ pub struct CpuFeatures {
     pub has_avx2: bool,
     pub has_sse41: bool,
     pub has_fma: bool,
+    /// ARM64 NEON — always true on AArch64 (mandatory in the base ISA)
+    pub has_neon: bool,
 }
 
 /// Detect CPU features (cached via LazyLock)
@@ -43,16 +45,19 @@ fn detect_cpu_features() -> CpuFeatures {
             has_avx2: is_x86_feature_detected!("avx2"),
             has_sse41: is_x86_feature_detected!("sse4.1"),
             has_fma: is_x86_feature_detected!("fma"),
+            has_neon: false,
         }
     }
 
     #[cfg(target_arch = "aarch64")]
     {
+        // NEON is mandatory on every AArch64 CPU — no runtime detection needed.
         CpuFeatures {
             has_avx512: false,
             has_avx2: false,
             has_sse41: false,
             has_fma: false,
+            has_neon: true,
         }
     }
 
@@ -63,6 +68,7 @@ fn detect_cpu_features() -> CpuFeatures {
             has_avx2: false,
             has_sse41: false,
             has_fma: false,
+            has_neon: false,
         }
     }
 }
@@ -80,10 +86,14 @@ pub fn cpu_features() -> CpuFeatures {
 // Public API (single-pass optimized mixing)
 // ============================================================================
 
-/// Mix multiple audio streams with SIMD optimization
+/// Mix multiple audio streams with SIMD optimization.
 ///
-/// Single-pass: fill + mix + clip combined into one loop.
-/// For large buffers, uses Rayon parallelism with thread-local pools.
+/// Dispatch order (best → fallback):
+/// - ARM64:  NEON   (always available, 4×f32, vfmaq_f32)
+/// - x86_64: AVX-512 + FMA  (16×f32, masked tail)
+/// - x86_64: AVX2   + FMA  (8×f32)
+/// - x86_64: SSE4.1 + FMA  (4×f32)
+/// - Any:    scalar (auto-vectorized by LLVM)
 #[inline]
 pub fn audio_mix(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32]) {
     if output.is_empty() {
@@ -96,10 +106,14 @@ pub fn audio_mix(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32]) {
         return;
     }
 
-    let features = &*CPU_FEATURES;
+    // ── ARM64: NEON is mandatory on every AArch64 CPU ────────────────────────
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: NEON is part of the AArch64 base ISA — always present
+    return unsafe { audio_mix_neon(output, inputs, volumes) };
 
     #[cfg(target_arch = "x86_64")]
     {
+        let features = &*CPU_FEATURES;
         if features.has_avx512 && features.has_fma {
             // SAFETY: CPU feature verified via detection
             return unsafe { audio_mix_avx512(output, inputs, volumes) };
@@ -113,10 +127,11 @@ pub fn audio_mix(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32]) {
     }
 
     // Scalar fallback with auto-vectorization
+    #[cfg(not(target_arch = "aarch64"))]
     audio_mix_scalar(output, inputs, volumes)
 }
 
-/// Apply volume/gain with SIMD optimization
+/// Apply volume/gain with SIMD optimization.
 #[inline]
 pub fn apply_volume(buffer: &mut [f32], gain: f32) {
     if buffer.is_empty() {
@@ -134,23 +149,24 @@ pub fn apply_volume(buffer: &mut [f32], gain: f32) {
         return;
     }
 
-    let features = &*CPU_FEATURES;
+    // ── ARM64: NEON ───────────────────────────────────────────────────────────
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: NEON is part of the AArch64 base ISA
+    return unsafe { apply_volume_neon(buffer, gain) };
 
     #[cfg(target_arch = "x86_64")]
     {
+        let features = &*CPU_FEATURES;
         if features.has_avx512 && features.has_fma {
-            // SAFETY: CPU feature verified via detection
             return unsafe { apply_volume_avx512(buffer, gain) };
         } else if features.has_avx2 && features.has_fma {
-            // SAFETY: CPU feature verified via detection
             return unsafe { apply_volume_avx2(buffer, gain) };
         } else if features.has_sse41 && features.has_fma {
-            // SAFETY: CPU feature verified via detection
             return unsafe { apply_volume_sse41(buffer, gain) };
         }
     }
 
-    // Scalar fallback
+    #[cfg(not(target_arch = "aarch64"))]
     apply_volume_scalar(buffer, gain)
 }
 
@@ -364,17 +380,28 @@ unsafe fn audio_mix_avx2(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32])
     let simd_len = len / 8 * 8;
     let last_input_idx = inputs.len().saturating_sub(1);
 
+    // Prefetch distance: 8 AVX2 iterations × 8 f32 = 64 f32 = 256 bytes = 4 cache lines
+    // Hides ~100-300 ns of DRAM latency on cold-cache large buffers.
+    const PF_DIST: usize = 64;
+
     for (input_idx, (input, &volume)) in inputs.iter().zip(volumes.iter()).enumerate() {
         let vol_vec = _mm256_set1_ps(volume);
 
         if input_idx == 0 {
             for i in (0..simd_len).step_by(8) {
+                // Software prefetch: bring next data into L1/L2 while working on current
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm256_loadu_ps(&input[i]);
                 let scaled = _mm256_mul_ps(inp_vec, vol_vec);
                 _mm256_storeu_ps(&mut output[i], scaled);
             }
         } else if input_idx < last_input_idx {
             for i in (0..simd_len).step_by(8) {
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm256_loadu_ps(&input[i]);
                 let out_vec = _mm256_loadu_ps(&output[i]);
                 let result = _mm256_fmadd_ps(inp_vec, vol_vec, out_vec);
@@ -385,6 +412,9 @@ unsafe fn audio_mix_avx2(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32])
             let min_vec = _mm256_set1_ps(-1.0);
             let max_vec = _mm256_set1_ps(1.0);
             for i in (0..simd_len).step_by(8) {
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm256_loadu_ps(&input[i]);
                 let out_vec = _mm256_loadu_ps(&output[i]);
                 let mixed = _mm256_fmadd_ps(inp_vec, vol_vec, out_vec);
@@ -443,17 +473,27 @@ unsafe fn audio_mix_avx512(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32
     let simd_len = len / 16 * 16;
     let last_input_idx = inputs.len().saturating_sub(1);
 
+    // Prefetch distance: 4 AVX-512 iterations × 16 f32 = 64 f32 = 256 bytes = 4 cache lines.
+    // On a modern server with 64-byte cache lines this hides ~200-400 ns DRAM latency.
+    const PF_DIST: usize = 64;
+
     for (input_idx, (input, &volume)) in inputs.iter().zip(volumes.iter()).enumerate() {
         let vol_vec = _mm512_set1_ps(volume);
 
         if input_idx == 0 {
             for i in (0..simd_len).step_by(16) {
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm512_loadu_ps(&input[i]);
                 let scaled = _mm512_mul_ps(inp_vec, vol_vec);
                 _mm512_storeu_ps(&mut output[i], scaled);
             }
         } else if input_idx < last_input_idx {
             for i in (0..simd_len).step_by(16) {
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm512_loadu_ps(&input[i]);
                 let out_vec = _mm512_loadu_ps(&output[i]);
                 let result = _mm512_fmadd_ps(inp_vec, vol_vec, out_vec);
@@ -464,6 +504,9 @@ unsafe fn audio_mix_avx512(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32
             let min_vec = _mm512_set1_ps(-1.0);
             let max_vec = _mm512_set1_ps(1.0);
             for i in (0..simd_len).step_by(16) {
+                if i + PF_DIST < input.len() {
+                    _mm_prefetch(input.as_ptr().add(i + PF_DIST) as *const i8, _MM_HINT_T0);
+                }
                 let inp_vec = _mm512_loadu_ps(&input[i]);
                 let out_vec = _mm512_loadu_ps(&output[i]);
                 let mixed = _mm512_fmadd_ps(inp_vec, vol_vec, out_vec);
@@ -522,6 +565,88 @@ unsafe fn apply_volume_avx512(buffer: &mut [f32], gain: f32) {
         let vec = _mm512_maskz_loadu_ps(mask, &buffer[simd_len]);
         let result = _mm512_mul_ps(vec, gain_vec);
         _mm512_mask_storeu_ps(&mut buffer[simd_len], mask, result);
+    }
+}
+
+// ============================================================================
+// ARM64 NEON Implementations (128-bit SIMD — 4×f32 per register)
+// NEON is mandatory on every AArch64 CPU (Apple Silicon, AWS Graviton,
+// Ampere Altra, etc.).  vfmaq_f32 is the NEON equivalent of FMA.
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn audio_mix_neon(output: &mut [f32], inputs: &[&[f32]], volumes: &[f32]) {
+    use std::arch::aarch64::*;
+
+    let len = output.len();
+    let simd_len = len / 4 * 4;
+    let last_input_idx = inputs.len().saturating_sub(1);
+
+    for (input_idx, (input, &volume)) in inputs.iter().zip(volumes.iter()).enumerate() {
+        let vol_vec = vdupq_n_f32(volume);
+
+        if input_idx == 0 {
+            // First input: scale into output (no accumulate)
+            for i in (0..simd_len).step_by(4) {
+                let inp = vld1q_f32(input.as_ptr().add(i));
+                let scaled = vmulq_f32(inp, vol_vec);
+                vst1q_f32(output.as_mut_ptr().add(i), scaled);
+            }
+        } else if input_idx < last_input_idx {
+            // Middle inputs: FMA accumulate
+            for i in (0..simd_len).step_by(4) {
+                let inp = vld1q_f32(input.as_ptr().add(i));
+                let out = vld1q_f32(output.as_ptr().add(i));
+                // vfmaq_f32(acc, a, b) = acc + a * b
+                let result = vfmaq_f32(out, inp, vol_vec);
+                vst1q_f32(output.as_mut_ptr().add(i), result);
+            }
+        } else {
+            // Last input: FMA + clamp in ONE pass (fused mix+clip)
+            let min_vec = vdupq_n_f32(-1.0);
+            let max_vec = vdupq_n_f32(1.0);
+            for i in (0..simd_len).step_by(4) {
+                let inp = vld1q_f32(input.as_ptr().add(i));
+                let out = vld1q_f32(output.as_ptr().add(i));
+                let mixed = vfmaq_f32(out, inp, vol_vec);
+                // clamp: max(min_vec, min(max_vec, mixed))
+                let clamped = vminq_f32(vmaxq_f32(mixed, min_vec), max_vec);
+                vst1q_f32(output.as_mut_ptr().add(i), clamped);
+            }
+        }
+    }
+
+    // Scalar tail (0-3 remaining samples)
+    for idx in simd_len..len {
+        let mut sum = 0.0f32;
+        for (input, &vol) in inputs.iter().zip(volumes.iter()) {
+            if idx < input.len() {
+                sum += input[idx] * vol;
+            }
+        }
+        output[idx] = sum.clamp(-1.0, 1.0);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn apply_volume_neon(buffer: &mut [f32], gain: f32) {
+    use std::arch::aarch64::*;
+
+    let len = buffer.len();
+    let simd_len = len / 4 * 4;
+    let gain_vec = vdupq_n_f32(gain);
+
+    for i in (0..simd_len).step_by(4) {
+        let v = vld1q_f32(buffer.as_ptr().add(i));
+        let result = vmulq_f32(v, gain_vec);
+        vst1q_f32(buffer.as_mut_ptr().add(i), result);
+    }
+
+    // Scalar tail
+    for sample in buffer.iter_mut().skip(simd_len) {
+        *sample *= gain;
     }
 }
 

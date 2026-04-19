@@ -1,0 +1,4 @@
+# AlignedF32Buffer — 64-byte aligned f32 storage for AVX-512 aligned loads.
+#
+# Appending to buffer_pool.rs (add after all existing code)
+

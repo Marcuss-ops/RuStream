@@ -73,6 +73,7 @@ pub use video::{ConcatConfig, fused_concat, fused_concat_batch, FusedConcatResul
 // Audio
 pub use core::audio_graph::{AudioGraphConfig, AudioGraphResult, AudioInput, SyncConfig as AudioSyncConfig};
 pub use audio::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES, LARGE_SAMPLES};
+pub use audio::{AlignedF32Buffer, CACHE_LINE};
 pub use audio::{DecodedAudio, decode_audio_file, native_decoding_available};
 
 // Filters / overlay
