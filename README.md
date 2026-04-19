@@ -1,4 +1,4 @@
-# RustStream
+# RuStream
 
 A Rust-first media processing engine for probing, concatenation, and automated rendering pipelines.
 
@@ -6,9 +6,9 @@ A Rust-first media processing engine for probing, concatenation, and automated r
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-blue.svg)](https://www.rust-lang.org/)
 
-## Why RustStream?
+## Why RuStream?
 
-RustStream is built for backend and CLI-driven media workflows where startup time, predictable memory use, and scriptability matter.
+RuStream is built for backend and CLI-driven media workflows where startup time, predictable memory use, and scriptability matter.
 
 It is a good fit when you want to:
 - probe media metadata from automation pipelines
@@ -16,9 +16,9 @@ It is a good fit when you want to:
 - run media jobs on lean servers or VPS environments
 - keep the orchestration layer in Rust instead of Python wrappers
 
-## Current Status
+## Current status
 
-RustStream is an actively evolving project with a modular core under `ruststream-core`.
+RuStream is an actively evolving project with a modular core under `ruststream-core`.
 
 Today the repository already includes:
 - a CLI for probing, concatenation, benchmarking, and library info
@@ -28,7 +28,7 @@ Today the repository already includes:
 
 Some processing paths still rely on FFmpeg development libraries at build time, so the project is not yet fully independent from FFmpeg.
 
-## Project Layout
+## Project layout
 
 ```text
 RuStream/
@@ -47,7 +47,7 @@ RuStream/
 └── .github/workflows/      # CI pipeline
 ```
 
-## Quick Start
+## Quick start
 
 ### Requirements
 
@@ -75,7 +75,7 @@ cargo build --release
 cargo run --release -- --help
 ```
 
-## CLI Examples
+## CLI examples
 
 ```bash
 # Probe media metadata
@@ -112,7 +112,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo bench
 ```
 
-### PGO Build
+### PGO build
 
 ```bash
 ./scripts/build-pgo.sh
