@@ -11,6 +11,16 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 
+// ── Cross-platform path helpers ───────────────────────────────────────────────
+
+/// A path that is guaranteed not to exist on Windows or Linux.
+fn nonexistent_path() -> &'static str {
+    #[cfg(windows)]
+    return "C:\\__ruststream_nonexistent__\\file.mp4";
+    #[cfg(not(windows))]
+    return "/nonexistent/__ruststream__/file.mp4";
+}
+
 /// Test audio mix kernel with zero inputs
 #[test]
 fn test_audio_mix_no_inputs() {
@@ -95,7 +105,7 @@ fn test_apply_volume_attenuate() {
 /// Test probe non-existent file
 #[test]
 fn test_probe_nonexistent_file() {
-    let result = probe::probe_full("/nonexistent/file.mp4");
+    let result = probe::probe_full(nonexistent_path());
     assert!(result.is_err(), "Probing non-existent file should fail");
     
     if let Err(e) = result {
@@ -125,7 +135,13 @@ fn test_error_handling_invalid_media() {
 /// Test probe file path API
 #[test]
 fn test_probe_file_path() {
-    let result = probe::probe_file(Path::new("/nonexistent.mp4"));
+    // Use a path that doesn't exist on either Windows or Linux
+    #[cfg(windows)]
+    let p = Path::new("C:\\__nonexistent__.mp4");
+    #[cfg(not(windows))]
+    let p = Path::new("/nonexistent.mp4");
+
+    let result = probe::probe_file(p);
     assert!(result.is_err(), "Probing non-existent file should fail");
     
     if let Err(e) = result {

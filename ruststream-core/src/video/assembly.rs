@@ -238,23 +238,28 @@ pub fn bake_assembly_audio(config: AssemblyAudioConfig) -> MediaResult<String> {
     bake_assembly_audio_cli(config)
 }
 
-/// CLI-based assembly audio baking
+/// CLI-based assembly audio baking — uses `FfmpegCommand` so spawns are
+/// counted in the `Profiler` when one is passed via the global context.
 fn bake_assembly_audio_cli(config: AssemblyAudioConfig) -> MediaResult<String> {
+    use crate::io::subprocess::FfmpegCommand;
+
     let cmd = build_assembly_audio_command(&config)
         .map_err(|e| MediaError::new(MediaErrorCode::AudioResampleFailed, e))?;
 
-    let output = std::process::Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .output()
-        .map_err(|e| MediaError::new(MediaErrorCode::AudioResampleFailed, format!("Failed to execute ffmpeg: {}", e)))?;
+    // Skip the first element ("ffmpeg") — FfmpegCommand adds it automatically
+    let args = &cmd[1..];
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(MediaError::new(MediaErrorCode::AudioResampleFailed, format!("FFmpeg failed (exit {}): {}", output.status, stderr)));
-    }
+    FfmpegCommand::new()
+        .args(args.iter().cloned())
+        .output_file(config.output_path.clone())
+        .output()
+        .map_err(|e| MediaError::new(MediaErrorCode::AudioResampleFailed, e.to_string()))?;
 
     if !Path::new(&config.output_path).exists() {
-        return Err(MediaError::new(MediaErrorCode::AudioResampleFailed, "Output file was not created"));
+        return Err(MediaError::new(
+            MediaErrorCode::AudioResampleFailed,
+            "Output file was not created",
+        ));
     }
 
     let output_size = std::fs::metadata(&config.output_path)
@@ -262,7 +267,10 @@ fn bake_assembly_audio_cli(config: AssemblyAudioConfig) -> MediaResult<String> {
         .unwrap_or(0);
 
     if output_size < 1024 {
-        return Err(MediaError::new(MediaErrorCode::AudioResampleFailed, format!("Output file too small ({} bytes)", output_size)));
+        return Err(MediaError::new(
+            MediaErrorCode::AudioResampleFailed,
+            format!("Output file too small ({} bytes)", output_size),
+        ));
     }
 
     Ok(config.output_path.clone())

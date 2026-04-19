@@ -80,6 +80,9 @@ default = ["cli"]
 cli = []
 server = ["axum", "tokio", "tower", "tower-http"]
 full = ["cli", "server"]
+# Enable tests that require pre-generated fixture files.
+# usage: cargo test --features real_media
+real_media = []
 
 # Maximum performance release profile
 [profile.release]

@@ -2,3 +2,11 @@
 # Enable all CPU features available on the build machine
 # For distribution builds, use: RUSTFLAGS="-C target-cpu=x86-64-v3"
 rustflags = ["-C", "target-cpu=native"]
+
+[target.x86_64-pc-windows-msvc]
+# Windows dev builds: no native tuning by default (avoids LLVM issues with some MinGW setups)
+# For local perf benchmarks on Windows, set manually: $env:RUSTFLAGS="-C target-cpu=native"
+rustflags = []
+
+[target.x86_64-pc-windows-gnu]
+rustflags = []

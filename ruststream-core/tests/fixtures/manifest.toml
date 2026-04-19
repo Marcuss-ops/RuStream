@@ -1,4 +1,8 @@
 # Test fixture manifest for ruststream-core
+#
+# Status values:
+#   "ready"   — file present in repo / generated
+#   "planned" — needs generation via generate_fixtures.ps1 / .sh
 
 [[fixture]]
 name = "invalid-bin"
@@ -8,15 +12,83 @@ purpose = "Exercise invalid-media and decode error paths"
 status = "planned"
 
 [[fixture]]
+name = "silence-1s-wav"
+path = "silence_1s.wav"
+kind = "audio"
+purpose = "Probe ultra-light + audio mix smoke test (cold/warm cache)"
+status = "planned"
+size_hint = "~88 KB"
+
+[[fixture]]
+name = "silence-5s-wav"
+path = "silence_5s.wav"
+kind = "audio"
+purpose = "Audio mix breve (SIMD kernel diretto)"
+status = "planned"
+size_hint = "~440 KB"
+
+[[fixture]]
+name = "silence-60s-wav"
+path = "silence_60s.wav"
+kind = "audio"
+purpose = "Audio mix lungo — stress SIMD kernel"
+status = "planned"
+size_hint = "~5.3 MB"
+
+[[fixture]]
+name = "black-1s-h264-mp4"
+path = "black_1s_h264.mp4"
+kind = "video"
+purpose = "Probe MP4 piccolo (cold + warm), concat compatibile clip A"
+status = "planned"
+size_hint = "~50 KB"
+codec = "h264"
+resolution = "640x360"
+fps = 30
+
+[[fixture]]
+name = "black-10s-h264-mp4"
+path = "black_10s_h264.mp4"
+kind = "video"
+purpose = "Probe MP4 medio"
+status = "planned"
+size_hint = "~200 KB"
+codec = "h264"
+resolution = "640x360"
+fps = 30
+
+[[fixture]]
+name = "black-1s-compat-a-mp4"
+path = "black_1s_compat_a.mp4"
+kind = "video"
+purpose = "Concat compatibile — clip A (stream-copy fast path)"
+status = "planned"
+size_hint = "~50 KB"
+codec = "h264"
+resolution = "640x360"
+fps = 30
+
+[[fixture]]
+name = "black-1s-compat-b-mp4"
+path = "black_1s_compat_b.mp4"
+kind = "video"
+purpose = "Concat compatibile — clip B (stream-copy fast path)"
+status = "planned"
+size_hint = "~50 KB"
+codec = "h264"
+resolution = "640x360"
+fps = 30
+
+[[fixture]]
 name = "sample-wav"
 path = "sample.wav"
 kind = "audio"
-purpose = "Probe and decode smoke tests"
+purpose = "Probe and decode smoke tests (legacy)"
 status = "planned"
 
 [[fixture]]
 name = "sample-mp4"
 path = "sample.mp4"
 kind = "video"
-purpose = "Metadata and concat smoke tests"
+purpose = "Metadata and concat smoke tests (legacy)"
 status = "planned"

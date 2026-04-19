@@ -9,7 +9,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Serialize, Deserialize};
-use crate::probe::FullMetadata;
+use crate::probe::{FullMetadata, cache_key};
 use crate::core::{MediaError, MediaErrorCode, MediaResult};
 
 /// Table definition for redb (binary values with bincode)
@@ -225,13 +225,15 @@ impl MediaCache {
             return Ok(None);
         };
 
+        let key = cache_key(path);
+
         let read_txn = db.begin_read()
             .map_err(|e| MediaError::new(MediaErrorCode::CacheWriteFailed, e.to_string()))?;
 
         let table = read_txn.open_table(METADATA_TABLE)
             .map_err(|e| MediaError::new(MediaErrorCode::CacheWriteFailed, e.to_string()))?;
 
-        match table.get(path) {
+        match table.get(key.as_str()) {
             Ok(Some(value)) => {
                 let bytes = value.value();
                 let metadata: FullMetadata = bincode::serde::decode_from_slice(bytes, bincode::config::standard())
@@ -242,7 +244,7 @@ impl MediaCache {
                     .map(|(meta, _)| meta)?;
 
                 // Update LRU index
-                self.lru.write().touch(path);
+                self.lru.write().touch(&key);
 
                 Ok(Some(metadata))
             }
@@ -256,6 +258,8 @@ impl MediaCache {
         let Some(db) = db_guard.as_ref() else {
             return Ok(()); // In-memory cache, skip
         };
+
+        let key = cache_key(path);
 
         let bytes = bincode::serde::encode_to_vec(metadata, bincode::config::standard())
             .map_err(|e| MediaError::new(
@@ -272,7 +276,7 @@ impl MediaCache {
             let mut table = write_txn.open_table(METADATA_TABLE)
                 .map_err(|e| MediaError::new(MediaErrorCode::CacheWriteFailed, e.to_string()))?;
 
-            table.insert(path, bytes.as_slice())
+            table.insert(key.as_str(), bytes.as_slice())
                 .map_err(|e| MediaError::new(
                     MediaErrorCode::CacheWriteFailed,
                     format!("Failed to insert into cache: {}", e)
@@ -283,7 +287,7 @@ impl MediaCache {
             .map_err(|e| MediaError::new(MediaErrorCode::CacheWriteFailed, e.to_string()))?;
 
         // Update LRU index and enforce size limit
-        self.lru.write().insert(path, entry_size);
+        self.lru.write().insert(&key, entry_size);
         self.enforce_size_limit()?;
 
         Ok(())

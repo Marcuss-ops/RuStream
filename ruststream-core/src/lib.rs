@@ -63,8 +63,10 @@ pub mod server;
 pub use core::{MediaError, MediaErrorCode, MediaResult};
 
 pub use probe::{FullMetadata, VideoMetadata, AudioMetadata};
+pub use probe::{probe_full, probe_fast, probe_file, probe_cached, probe_batch, cache_key};
 pub use video::ConcatConfig;
 pub use core::audio_graph::{AudioGraphConfig, AudioGraphResult, AudioInput, SyncConfig as AudioSyncConfig};
+pub use io::{FfmpegCommand, ffmpeg_available, ffmpeg_version, temp_dir, temp_file};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

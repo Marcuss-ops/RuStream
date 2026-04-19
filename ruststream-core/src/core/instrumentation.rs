@@ -126,6 +126,12 @@ pub struct Profiler {
     cpu_times: Vec<CpuTimeRecord>,
     /// Start time.
     start_time: Instant,
+    /// Number of subprocess (FFmpeg) spawns in this pipeline run.
+    subprocess_count: u32,
+    /// Total bytes read from disk (I/O read).
+    io_bytes_read: u64,
+    /// Total bytes written to disk (I/O write).
+    io_bytes_written: u64,
 }
 
 impl Profiler {
@@ -138,6 +144,9 @@ impl Profiler {
             samples_processed: 0,
             cpu_times: Vec::new(),
             start_time: Instant::now(),
+            subprocess_count: 0,
+            io_bytes_read: 0,
+            io_bytes_written: 0,
         }
     }
 
@@ -169,6 +178,21 @@ impl Profiler {
         });
     }
 
+    /// Record a subprocess spawn (e.g. FFmpeg invocation).
+    pub fn record_subprocess(&mut self) {
+        self.subprocess_count += 1;
+    }
+
+    /// Record bytes read from disk.
+    pub fn record_io_read(&mut self, bytes: u64) {
+        self.io_bytes_read += bytes;
+    }
+
+    /// Record bytes written to disk.
+    pub fn record_io_written(&mut self, bytes: u64) {
+        self.io_bytes_written += bytes;
+    }
+
     /// Get total elapsed time.
     pub fn total_elapsed_ms(&self) -> u64 {
         self.start_time.elapsed().as_millis() as u64
@@ -191,6 +215,9 @@ impl Profiler {
             total_cpu_time_ms: total_cpu_time,
             total_elapsed_ms: self.total_elapsed_ms(),
             operation_count: self.cpu_times.len(),
+            subprocess_count: self.subprocess_count,
+            io_bytes_read: self.io_bytes_read,
+            io_bytes_written: self.io_bytes_written,
         }
     }
 }
@@ -218,6 +245,12 @@ pub struct ProfilingReport {
     pub total_elapsed_ms: u64,
     /// Number of operations recorded.
     pub operation_count: usize,
+    /// Number of subprocess (FFmpeg) spawns.
+    pub subprocess_count: u32,
+    /// Total bytes read from disk across all operations.
+    pub io_bytes_read: u64,
+    /// Total bytes written to disk across all operations.
+    pub io_bytes_written: u64,
 }
 
 impl ProfilingReport {
@@ -256,6 +289,9 @@ impl ProfilingReport {
         output.push_str(&format!("Throughput: {:.1} bytes/sec\n", self.bytes_per_second()));
         output.push_str(&format!("Frame rate: {:.1} fps\n", self.frames_per_second()));
         output.push_str(&format!("Operations: {}\n", self.operation_count));
+        output.push_str(&format!("Subprocess spawns: {}\n", self.subprocess_count));
+        output.push_str(&format!("I/O read: {} KB\n", self.io_bytes_read / 1024));
+        output.push_str(&format!("I/O written: {} KB\n", self.io_bytes_written / 1024));
         output.push_str("\nStage Times:\n");
         
         let mut stages: Vec<_> = self.stage_times.iter().collect();
