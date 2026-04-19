@@ -1,59 +1,81 @@
 # RustStream
 
-High-performance video and audio processing engine built in 100% Rust.
+A Rust-first media processing engine for probing, concatenation, and automated rendering pipelines.
 
+[![CI](https://github.com/Marcuss-ops/RuStream/actions/workflows/ci.yml/badge.svg)](https://github.com/Marcuss-ops/RuStream/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-blue.svg)](https://www.rust-lang.org/)
 
-## Overview
+## Why RustStream?
 
-RustStream is a blazing-fast media processing engine designed for distributed video generation pipelines.
-It replaces Python-based video processing with a native Rust binary that's **82% smaller** and **80% more memory efficient**.
+RustStream is built for backend and CLI-driven media workflows where startup time, predictable memory use, and scriptability matter.
 
-### Key Features
+It is a good fit when you want to:
+- probe media metadata from automation pipelines
+- concatenate clips from a Rust-native command-line tool
+- run media jobs on lean servers or VPS environments
+- keep the orchestration layer in Rust instead of Python wrappers
 
-- **Native MP4 Parsing**: Direct atom parsing without ffprobe (100x faster)
-- **SIMD Audio Kernels**: AVX-512/AVX2/SSE4.1 optimized audio mixing (8x speedup)
-- **Zero-Copy Pipeline**: Minimize memory allocations between stages
-- **Memory Optimized**: Runs efficiently on 512MB VPS
-- **CLI Interface**: Fast, scriptable commands for probing, concatenating, and benchmarking
-- **HTTP API** (optional): Embeddable server with Axum
+## Current Status
 
-### Performance Metrics
+RustStream is an actively evolving project with a modular core under `ruststream-core`.
 
-| Metric | Before (Python) | After (Rust) | Improvement |
-|--------|----------------|--------------|-------------|
-| Binary Size | 45 MB | 8 MB | -82% |
-| RAM Usage | 100 MB | 20 MB | -80% |
-| Startup Time | 350 ms | <10 ms | -97% |
+Today the repository already includes:
+- a CLI for probing, concatenation, benchmarking, and library info
+- an optional HTTP API layer with Axum
+- SIMD-oriented audio processing components
+- integration tests, documentation, and CI workflows
+
+Some processing paths still rely on FFmpeg development libraries at build time, so the project is not yet fully independent from FFmpeg.
+
+## Project Layout
+
+```text
+RuStream/
+├── ruststream-core/        # Main Rust crate
+│   ├── src/
+│   │   ├── core/           # Core types, errors, timeline, audio graph
+│   │   ├── audio/          # Audio processing and mixing
+│   │   ├── video/          # Video processing and assembly
+│   │   ├── probe/          # Media metadata extraction
+│   │   ├── filters/        # FFmpeg filter builders
+│   │   └── render_graph/   # Render pipeline orchestration
+│   ├── benches/            # Performance benchmarks
+│   └── tests/              # Integration tests
+├── docs/                   # Documentation and archived project notes
+├── scripts/                # Build and optimization scripts
+└── .github/workflows/      # CI pipeline
+```
 
 ## Quick Start
 
-### Prerequisites
+### Requirements
 
 - Rust 1.70+
 - FFmpeg development libraries
 
 ```bash
-# Install FFmpeg dev libraries (Debian/Ubuntu)
+# Debian/Ubuntu
 sudo apt-get update
 sudo apt-get install -y \
   libavcodec-dev libavformat-dev libavutil-dev \
   libavfilter-dev libavdevice-dev libswresample-dev libswscale-dev
 ```
 
-### Build and Run
+### Build
 
 ```bash
-# Clone and build
 cd ruststream-core
 cargo build --release
+```
 
-# Run the binary
+### Run
+
+```bash
 cargo run --release -- --help
 ```
 
-## CLI Commands
+## CLI Examples
 
 ```bash
 # Probe media metadata
@@ -69,78 +91,42 @@ ruststream benchmark
 ruststream info
 ```
 
-## Project Layout
-
-```
-RustStream/
-├── ruststream-core/        # Main Rust crate
-│   ├── src/
-│   │   ├── core/          # Core types, errors, timeline, audio graph
-│   │   ├── audio/         # Audio processing (kernels, mixing, baking)
-│   │   ├── video/         # Video processing (overlay, effects, assembly)
-│   │   ├── probe/         # Media metadata extraction
-│   │   ├── filters/       # FFmpeg filter builders
-│   │   └── render_graph/  # Render pipeline orchestration
-│   ├── benches/           # Performance benchmarks
-│   └── tests/             # Integration tests
-├── docs/                  # Documentation (deployment, migration, performance)
-├── scripts/               # Build scripts (PGO, etc.)
-└── .github/workflows/     # CI pipeline
-```
-
 ## Development
 
-### Running Tests
+### Test
 
 ```bash
 cargo test --all
 ```
 
-### Running Benchmarks
+### Lint
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+### Benchmarks
 
 ```bash
 cargo bench
 ```
 
-### Linting
-
-```bash
-cargo clippy --all-targets --all-features
-cargo fmt --all -- --check
-```
-
-### Profile-Guided Optimization (PGO)
-
-For maximum performance on your specific hardware:
+### PGO Build
 
 ```bash
 ./scripts/build-pgo.sh
 ```
 
-## Architecture
+## Documentation
 
-RustStream follows a modular architecture:
+- `ruststream-core/README.md` for crate-specific usage
+- `docs/` for repository notes and archived migration documents
 
-```
-┌──────────────────────────────────────────────┐
-│               CLI / HTTP API                  │
-└──────────────────┬───────────────────────────┘
-                   │
-         ┌─────────┴──────────┐
-         ▼                    ▼
-┌────────────────┐  ┌──────────────────┐
-│  Probe Module  │  │  Render Graph    │
-│  (Metadata)    │  │  (Orchestration) │
-└────────────────┘  └────────┬─────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-       ┌──────────┐   ┌──────────┐   ┌──────────┐
-       │  Audio   │   │  Video   │   │ Filters  │
-       │  Engine  │   │  Engine  │   │ (FFmpeg) │
-       └──────────┘   └──────────┘   └──────────┘
-```
+## Contributing
+
+Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md) for workflow and scope expectations.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
