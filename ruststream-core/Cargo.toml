@@ -2,10 +2,10 @@
 name = "ruststream-core"
 version = "1.0.0"
 edition = "2021"
-description = "High-performance video/audio processing engine - 100% Rust, no Python"
+description = "Rust-first media processing engine with SIMD audio kernels and FFmpeg-backed video pipeline"
 license = "MIT"
-authors = ["VeloxEditing Team"]
-repository = "https://github.com/VeloxEditing/RustStream"
+authors = ["Marcuss-ops"]
+repository = "https://github.com/Marcuss-ops/RuStream"
 keywords = ["video", "audio", "processing", "simd", "ffmpeg"]
 categories = ["multimedia", "command-line-utilities"]
 
