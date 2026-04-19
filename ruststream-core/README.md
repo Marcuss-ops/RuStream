@@ -61,11 +61,22 @@ cargo test --all
 cargo build --release
 ```
 
+## Testing direction
+
+The current tests already cover synthetic audio paths, library info, invalid-media behavior, and fixture directory layout.
+
+The next layer of coverage should come from tiny real-media fixtures under `tests/fixtures/`:
+- a small valid MP4 for probe coverage
+- a small WAV for audio-oriented smoke tests
+- a clearly invalid binary sample for failure-path checks
+
 ## Related docs
 
 - repository overview: [`../README.md`](../README.md)
 - contribution guide: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 - CI workflow: [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+- fixture notes: [`tests/fixtures/README.md`](tests/fixtures/README.md)
+- fixture manifest: [`tests/fixtures/manifest.toml`](tests/fixtures/manifest.toml)
 
 ## License
 
