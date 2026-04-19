@@ -2,10 +2,14 @@
 name = "ruststream-core"
 version = "1.0.0"
 edition = "2021"
-description = "Rust-first media processing engine with SIMD audio kernels and FFmpeg-backed video pipeline"
+rust-version = "1.75"
+description = "Rust-first media processing engine for headless media pipelines with SIMD audio and FFmpeg-backed video workflows"
 license = "MIT"
 authors = ["Marcuss-ops"]
 repository = "https://github.com/Marcuss-ops/RuStream"
+homepage = "https://github.com/Marcuss-ops/RuStream"
+documentation = "https://github.com/Marcuss-ops/RuStream/tree/main/ruststream-core"
+readme = "README.md"
 keywords = ["video", "audio", "processing", "simd", "ffmpeg"]
 categories = ["multimedia", "command-line-utilities"]
 
