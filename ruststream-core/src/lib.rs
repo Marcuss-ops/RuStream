@@ -62,11 +62,27 @@ pub mod server;
 // Re-export core types
 pub use core::{MediaError, MediaErrorCode, MediaResult};
 
+// Probe
 pub use probe::{FullMetadata, VideoMetadata, AudioMetadata};
 pub use probe::{probe_full, probe_fast, probe_file, probe_cached, probe_batch, cache_key};
-pub use video::ConcatConfig;
+
+// Video
+pub use video::{ConcatConfig, fused_concat, fused_concat_batch, FusedConcatResult};
+
+// Audio
 pub use core::audio_graph::{AudioGraphConfig, AudioGraphResult, AudioInput, SyncConfig as AudioSyncConfig};
+pub use audio::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES};
+pub use audio::{DecodedAudio, decode_audio_file, native_decoding_available};
+
+// Filters / overlay
+pub use filters::{OverlayAsset, OverlayCache, OverlayCacheStats, global_overlay_cache};
+
+// I/O
 pub use io::{FfmpegCommand, ffmpeg_available, ffmpeg_version, temp_dir, temp_file};
+
+// Scheduler
+pub use core::{Job, probe_scheduled, run_scheduled, ConcatJob, concat_scheduled};
+
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

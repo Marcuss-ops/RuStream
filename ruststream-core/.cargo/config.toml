@@ -4,9 +4,20 @@
 rustflags = ["-C", "target-cpu=native"]
 
 [target.x86_64-pc-windows-msvc]
-# Windows dev builds: no native tuning by default (avoids LLVM issues with some MinGW setups)
-# For local perf benchmarks on Windows, set manually: $env:RUSTFLAGS="-C target-cpu=native"
+# Local dev/bench: target-cpu=native enables AVX2/AVX-512/FMA if the CPU supports them.
+# For CI or distribution: leave empty or use "x86-64-v3".
+# To activate: set RUSTFLAGS="-C target-cpu=native" manually, or uncomment below.
+# rustflags = ["-C", "target-cpu=native"]
 rustflags = []
 
 [target.x86_64-pc-windows-gnu]
 rustflags = []
+
+# Benchmark profile: native CPU tuning for accurate local perf numbers
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+# Uncomment for maximum bench accuracy on native hardware:
+# [env]
+# RUSTFLAGS = "-C target-cpu=native"

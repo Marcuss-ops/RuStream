@@ -1,6 +1,9 @@
-//! Filters module - FFmpeg filter builders
-//!
-//! Provides filter_complex string builders for FFmpeg.
+//! Filters module - FFmpeg filter builders and overlay asset cache.
+
+pub mod overlay_cache;
+
+pub use overlay_cache::{OverlayAsset, OverlayCache, OverlayCacheStats, global_overlay_cache};
+
 
 /// Transition types
 #[derive(Debug, Clone)]

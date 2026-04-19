@@ -1,6 +1,10 @@
 //! Video module - Video processing
 //!
-//! Provides video concatenation, overlay composition, and effects processing.
+//! Provides video concatenation, overlay composition, effects processing,
+//! and single-call pipeline fusion (probe + compat + concat).
+
+pub mod pipeline_fusion;
+pub use pipeline_fusion::{fused_concat, fused_concat_batch, FusedConcatResult};
 
 use serde::{Deserialize, Serialize};
 use std::fs;

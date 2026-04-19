@@ -66,6 +66,10 @@ pub enum MediaErrorCode {
     CacheFlushFailed,
     CacheMaintenanceFailed,
     CacheKeyGenerationFailed,
+
+    // Generic
+    InvalidInput,
+    ConcatFailed,
 }
 
 impl MediaErrorCode {
@@ -107,6 +111,8 @@ impl MediaErrorCode {
             Self::CacheFlushFailed => "CACHE_FLUSH_FAILED",
             Self::CacheMaintenanceFailed => "CACHE_MAINTENANCE_FAILED",
             Self::CacheKeyGenerationFailed => "CACHE_KEY_GENERATION_FAILED",
+            Self::InvalidInput => "INVALID_INPUT",
+            Self::ConcatFailed => "CONCAT_FAILED",
         }
     }
 }

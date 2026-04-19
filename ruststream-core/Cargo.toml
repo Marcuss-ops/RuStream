@@ -75,14 +75,21 @@ dirs = "5.0"
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
 
+# Native audio decoding (optional, eliminates FFmpeg subprocess per track)
+# Activate with: cargo build --features symphonia
+symphonia = { version = "0.5", features = ["mp3", "aac", "wav", "flac", "vorbis", "isomp4"], optional = true }
+
 [features]
 default = ["cli"]
 cli = []
 server = ["axum", "tokio", "tower", "tower-http"]
-full = ["cli", "server"]
-# Enable tests that require pre-generated fixture files.
-# usage: cargo test --features real_media
+# Native audio decode via Symphonia (no ffmpeg subprocess for pure audio)
+symphonia = ["dep:symphonia"]
+# Enable tests that require pre-generated fixture files:
+# cargo test --features real_media
 real_media = []
+# Everything:
+full = ["cli", "server", "symphonia"]
 
 # Maximum performance release profile
 [profile.release]
