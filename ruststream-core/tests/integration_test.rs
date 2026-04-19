@@ -149,3 +149,18 @@ fn test_version_not_empty() {
     assert!(!VERSION.is_empty(), "Version string should not be empty");
     assert!(VERSION.contains('.'), "Version should contain dot separator");
 }
+
+/// Test fixture directory layout exists for future real-media coverage
+#[test]
+fn test_fixture_directory_exists() {
+    assert!(Path::new("tests/fixtures").exists(), "tests/fixtures directory should exist");
+}
+
+/// Test fixture manifest exists for future media assets
+#[test]
+fn test_fixture_manifest_exists() {
+    assert!(
+        Path::new("tests/fixtures/manifest.toml").exists(),
+        "fixture manifest should exist"
+    );
+}
