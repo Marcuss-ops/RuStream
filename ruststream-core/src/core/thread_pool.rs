@@ -67,6 +67,15 @@ pub fn init_thread_pool() -> &'static PoolInfo {
         let built = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .thread_name(|i| format!("ruststream-worker-{}", i))
+            .start_handler(move |thread_idx| {
+                // ── CPU affinity: pin this worker to a physical core ──────────
+                // Prevents OS from migrating the thread between hyperthreads on
+                // the same physical core, preserving L1/L2 cache across jobs.
+                #[cfg(target_os = "linux")]
+                crate::io::affinity::pin_to_physical_core(thread_idx, physical);
+                #[cfg(not(target_os = "linux"))]
+                let _ = thread_idx;
+            })
             .build_global();
 
         let initialised = built.is_ok();

@@ -81,7 +81,16 @@ pub use filters::{OverlayAsset, OverlayCache, OverlayCacheStats, global_overlay_
 
 // I/O
 pub use io::{FfmpegCommand, ffmpeg_available, ffmpeg_version, temp_dir, temp_file};
-pub use io::{prefetch, prefetch_paths, prefetch_batch, cpu_prefetch};
+pub use io::{prefetch, prefetch_batch};
+pub use io::{read_file_bytes, open_noatime, read_noatime};
+
+#[cfg(target_os = "linux")]
+pub use io::{splice_copy, splice_concat, splice_available};
+#[cfg(target_os = "linux")]
+pub use io::{preallocate, advise_dontneed, advise_dontneed_batch, estimate_output_size};
+
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+pub use io::{stat_batch, io_uring_available, FileStat};
 
 // Scheduler + Thread pool + Instrumentation
 pub use core::{Job, probe_scheduled, run_scheduled, ConcatJob, concat_scheduled};
@@ -134,9 +143,13 @@ pub fn init() -> MediaResult<()> {
         }
     }
     
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
     {
-        log::info!("CPU: ARM64 NEON available");
+        if crate::io::io_uring_available() {
+            log::info!("CPU: Linux io_uring available (batch probing enabled)");
+        } else {
+            log::info!("CPU: Linux io_uring NOT available (kernel too old or RLIMIT_MEMLOCK reached)");
+        }
     }
     
     Ok(())

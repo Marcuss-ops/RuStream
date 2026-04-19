@@ -13,6 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ffmpeg_next as ff;
 use crate::core::{MediaError, MediaErrorCode, MediaResult};
+use crate::io;
+
+#[cfg(target_os = "linux")]
+use crate::io::{advise_dontneed, advise_dontneed_batch};
+#[cfg(all(target_os = "linux", feature = "io-uring"))]
+use crate::io::{stat_batch, io_uring_available};
 
 
 /// Complete media metadata
@@ -146,7 +152,7 @@ pub fn probe_full(path: &str) -> MediaResult<FullMetadata> {
         }
     }
 
-    Ok(FullMetadata {
+    let result = FullMetadata {
         path: path.to_string(),
         video: video_metadata,
         audio: audio_metadata_opt,
@@ -156,7 +162,12 @@ pub fn probe_full(path: &str) -> MediaResult<FullMetadata> {
             bit_rate,
             size_bytes,
         },
-    })
+    };
+
+    #[cfg(target_os = "linux")]
+    advise_dontneed(Path::new(path));
+
+    Ok(result)
 }
 
 /// Probe with file existence check
@@ -236,7 +247,7 @@ pub fn probe_fast(path: &str) -> MediaResult<FullMetadata> {
         }
     }
 
-    Ok(FullMetadata {
+    let result = FullMetadata {
         path: path.to_string(),
         video: video_metadata,
         audio: audio_metadata_opt,
@@ -246,7 +257,12 @@ pub fn probe_fast(path: &str) -> MediaResult<FullMetadata> {
             bit_rate,
             size_bytes,
         },
-    })
+    };
+
+    #[cfg(target_os = "linux")]
+    advise_dontneed(Path::new(path));
+
+    Ok(result)
 }
 
 /// Build a deterministic cache key for a file path.
@@ -317,14 +333,33 @@ pub fn probe_cached(path: &str) -> MediaResult<FullMetadata> {
 /// individual — a failing probe does not abort the others.
 ///
 /// # Performance
-/// Uses `probe_fast` by default (no decoder open). Pass `full = true` to use
-/// `probe_full` when you need width/height/fps/sample-rate.
+/// - On Linux with `io-uring`: fetches all file stats in one batch to warm
+///   the page cache and generate cache keys faster.
+/// - Uses `probe_fast` by default (no decoder open).
 pub fn probe_batch(paths: &[&str], full: bool) -> Vec<MediaResult<FullMetadata>> {
+    #[cfg(all(target_os = "linux", feature = "io-uring"))]
+    {
+        if io_uring_available() {
+            // Optimization: fetch stats for all files in a single batch
+            // This warms the page cache and provides hints to the disk scheduler.
+            let _ = stat_batch(paths);
+        }
+    }
+
     use rayon::prelude::*;
-    paths
+    let results: Vec<MediaResult<FullMetadata>> = paths
         .par_iter()
         .map(|&p| if full { probe_full(p) } else { probe_fast(p) })
-        .collect()
+        .collect();
+
+    #[cfg(target_os = "linux")]
+    {
+        // Hint kernel to reclaim page cache now that probing is done
+        let path_refs: Vec<&Path> = paths.iter().map(|p| Path::new(p)).collect();
+        advise_dontneed_batch(&path_refs);
+    }
+
+    results
 }
 
 #[cfg(test)]

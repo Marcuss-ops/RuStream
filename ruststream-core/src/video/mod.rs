@@ -232,6 +232,18 @@ pub fn concat_videos(config: &ConcatConfig) -> Result<bool, String> {
         prefetch_batch(&refs);
     }
 
+    // ── FS pre-allocation: reserve contiguous space for output (Linux) ───────
+    #[cfg(target_os = "linux")]
+    {
+        use crate::io::{preallocate, estimate_output_size};
+        let input_paths: Vec<&Path> = config.inputs.iter().map(Path::new).collect();
+        // Estimate 110% of input size to account for container overhead
+        let estimated = estimate_output_size(&input_paths, 1.10);
+        if let Err(e) = preallocate(Path::new(&config.output), estimated) {
+            log::warn!("failed to pre-allocate output file: {} (proceeding anyway)", e);
+        }
+    }
+
     // ── Fast path: stream-copy if all clips are compatible ────────────────────
     if config.allow_stream_copy {
         if let Some(profile) = check_stream_copy_compatible(&config.inputs) {
@@ -294,6 +306,13 @@ pub fn concat_videos(config: &ConcatConfig) -> Result<bool, String> {
     let output = cmd.output();
 
     let _ = fs::remove_file(&concat_list_path);
+
+    #[cfg(target_os = "linux")]
+    {
+        use crate::io::advise_dontneed_batch;
+        let input_paths: Vec<&Path> = config.inputs.iter().map(Path::new).collect();
+        advise_dontneed_batch(&input_paths);
+    }
 
     match output {
         Ok(output) => {

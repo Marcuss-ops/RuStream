@@ -52,9 +52,10 @@ num_cpus = "1.16"
 # Error handling
 thiserror = "2.0"
 
-# Linux syscall bindings (posix_fadvise prefetch hints)
+# Linux syscall bindings (posix_fadvise, io_uring)
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+io-uring = { version = "0.7", optional = true }
 
 # CLI interface
 clap = { version = "4.4", features = ["derive", "env"] }
@@ -89,11 +90,13 @@ cli = []
 server = ["axum", "tokio", "tower", "tower-http"]
 # Native audio decode via Symphonia (no ffmpeg subprocess for pure audio)
 symphonia = ["dep:symphonia"]
+# io_uring for batch probing
+io-uring = ["dep:io-uring"]
 # Enable tests that require pre-generated fixture files:
 # cargo test --features real_media
 real_media = []
 # Everything:
-full = ["cli", "server", "symphonia"]
+full = ["cli", "server", "symphonia", "io-uring"]
 
 # Maximum performance release profile
 [profile.release]
