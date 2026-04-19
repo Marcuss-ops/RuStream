@@ -62,9 +62,10 @@ pub mod server;
 // Re-export core types
 pub use core::{MediaError, MediaErrorCode, MediaResult};
 
-// Probe
-pub use probe::{FullMetadata, VideoMetadata, AudioMetadata};
+// Probe — full two-level cache stack
+pub use probe::{FullMetadata, VideoMetadata, AudioMetadata, FormatMetadata};
 pub use probe::{probe_full, probe_fast, probe_file, probe_cached, probe_batch, cache_key};
+pub use probe::{probe_cached_l1, probe_batch_cached, l1_invalidate, l1_occupancy};
 
 // Video
 pub use video::{ConcatConfig, fused_concat, fused_concat_batch, FusedConcatResult};
@@ -79,21 +80,37 @@ pub use filters::{OverlayAsset, OverlayCache, OverlayCacheStats, global_overlay_
 
 // I/O
 pub use io::{FfmpegCommand, ffmpeg_available, ffmpeg_version, temp_dir, temp_file};
+pub use io::{prefetch, prefetch_paths, prefetch_batch, cpu_prefetch};
 
-// Scheduler
+// Scheduler + Thread pool
 pub use core::{Job, probe_scheduled, run_scheduled, ConcatJob, concat_scheduled};
-
+pub use core::{init_thread_pool, pool_info, worker_count};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Initialize the library
+///
+/// Call once at process startup. Subsequent calls are safe (no-ops).
+/// This function:
+/// 1. Initialises FFmpeg
+/// 2. Tunes and warms the rayon thread pool
+/// 3. Logs CPU features and pool configuration
 pub fn init() -> MediaResult<()> {
     // Initialize FFmpeg
     ffmpeg_next::init()
         .map_err(|e| MediaError::new(MediaErrorCode::InitFailed, format!("FFmpeg init failed: {}", e)))?;
-    
-    log::info!("RustStream Core v{}", VERSION);
+
+    // Tune + warm the rayon thread pool (idempotent)
+    let pool = core::thread_pool::init_thread_pool();
+    log::info!(
+        "RustStream Core v{} | rayon workers={} (physical={} logical={})",
+        VERSION,
+        pool.config.num_threads,
+        pool.config.physical_cpus,
+        pool.config.logical_cpus,
+    );
+
     log::info!("FFmpeg initialized");
     
     // Log CPU features

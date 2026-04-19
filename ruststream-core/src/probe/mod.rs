@@ -1,11 +1,19 @@
 //! Probe module - Media file metadata extraction
 //!
-//! Provides native MP4/MOV metadata extraction.
+//! Provides native MP4/MOV metadata extraction with two-level caching:
+//! - L1: thread-local 32-slot slab (lock-free, < 1 µs)
+//! - L2: process-global redb-backed LRU cache (~100–500 µs)
+
+pub mod cache;
+pub mod hot_cache;
+
+pub use hot_cache::{probe_cached_l1, probe_batch_cached, l1_invalidate, l1_occupancy};
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use ffmpeg_next as ff;
 use crate::core::{MediaError, MediaErrorCode, MediaResult};
+
 
 /// Complete media metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]

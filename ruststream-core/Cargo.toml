@@ -52,6 +52,10 @@ num_cpus = "1.16"
 # Error handling
 thiserror = "2.0"
 
+# Linux syscall bindings (posix_fadvise prefetch hints)
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 # CLI interface
 clap = { version = "4.4", features = ["derive", "env"] }
 

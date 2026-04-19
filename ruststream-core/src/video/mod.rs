@@ -213,6 +213,25 @@ pub fn concat_videos(config: &ConcatConfig) -> Result<bool, String> {
         }
     }
 
+    // ── Zero-cost shortcut: single input = just copy the file ─────────────────
+    // Avoids spawning FFmpeg entirely for the trivial case.
+    if config.inputs.len() == 1 {
+        let src = &config.inputs[0];
+        log::info!("concat_videos: single input — fs::copy shortcut {} → {}", src, config.output);
+        fs::copy(src, &config.output)
+            .map_err(|e| format!("fs::copy failed: {}", e))?;
+        return Ok(true);
+    }
+
+    // ── OS prefetch: hint the kernel to read-ahead all inputs ─────────────────
+    // On Linux: posix_fadvise(SEQUENTIAL+WILLNEED) before FFmpeg opens the files.
+    // On Windows: FILE_FLAG_SEQUENTIAL_SCAN on each handle.
+    {
+        use crate::io::prefetch::prefetch_batch;
+        let refs: Vec<&str> = config.inputs.iter().map(String::as_str).collect();
+        prefetch_batch(&refs);
+    }
+
     // ── Fast path: stream-copy if all clips are compatible ────────────────────
     if config.allow_stream_copy {
         if let Some(profile) = check_stream_copy_compatible(&config.inputs) {
