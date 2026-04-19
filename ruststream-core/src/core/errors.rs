@@ -190,59 +190,8 @@ impl From<MediaError> for String {
 /// Result type for media pipeline operations.
 pub type MediaResult<T> = Result<T, MediaError>;
 
-/// Stage-level timing metrics for pipeline execution.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct StageMetrics {
-    /// Time spent in decode stage (milliseconds).
-    pub decode_ms: u64,
-    /// Time spent in effects stage (milliseconds).
-    pub effects_ms: u64,
-    /// Time spent in overlay stage (milliseconds).
-    pub overlay_ms: u64,
-    /// Time spent in encode stage (milliseconds).
-    pub encode_ms: u64,
-    /// Time spent in audio processing (milliseconds).
-    pub audio_ms: u64,
-    /// Total pipeline time (milliseconds).
-    pub total_ms: u64,
-}
-
-impl StageMetrics {
-    /// Create a new empty metrics instance.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Sum of all stage times.
-    pub fn stage_sum(&self) -> u64 {
-        self.decode_ms + self.effects_ms + self.overlay_ms + self.encode_ms + self.audio_ms
-    }
-}
-
-/// Drift correction metrics for audio/video sync.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DriftMetrics {
-    /// Maximum drift observed (in frames).
-    pub drift_frames_max: f64,
-    /// 95th percentile drift (in frames).
-    pub drift_frames_p95: f64,
-    /// Number of drift corrections applied.
-    pub drift_corrections_count: u32,
-    /// Average resample ratio used for corrections.
-    pub resample_ratio_avg: f64,
-}
-
-impl DriftMetrics {
-    /// Create a new empty drift metrics instance.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Check if drift is within acceptable threshold (<= 1 frame).
-    pub fn is_acceptable(&self) -> bool {
-        self.drift_frames_max <= 1.0
-    }
-}
+// Re-export metrics from instrumentation module (canonical definitions)
+pub use crate::core::instrumentation::{StageMetrics, DriftMetrics};
 
 /// Complete pipeline result with metrics and optional error.
 #[derive(Debug, Clone, Serialize, Deserialize)]

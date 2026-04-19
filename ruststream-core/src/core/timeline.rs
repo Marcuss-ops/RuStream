@@ -71,8 +71,10 @@ impl Default for Timebase {
 
 /// SIMD optimization level for CPU-bound operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum SimdLevel {
     /// Auto-detect best SIMD level for the current CPU.
+    #[default]
     Auto,
     /// AVX2 (256-bit SIMD).
     Avx2,
@@ -80,11 +82,6 @@ pub enum SimdLevel {
     Avx512,
 }
 
-impl Default for SimdLevel {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 /// Thread allocation for pipeline stages.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

@@ -1,2 +1,54 @@
+# Build artifacts
 target/
 **/target/
+*.profdata
+*.profraw
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+.cline/
+
+# Rust analyzer
+.rust-analyzer/
+
+# Logs and runtime data
+logs/
+*.log
+data/
+runtime/
+
+# Test artifacts
+*.tmp
+*.temp
+/test-data/
+
+# PGO data
+/pgo-data/
+/pgo-test-data/
+
+# Coverage reports
+coverage/
+*.gcda
+*.gcno
+
+# Benchmark outputs
+criterion/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Backup files
+*.bak
+*.rs.bak

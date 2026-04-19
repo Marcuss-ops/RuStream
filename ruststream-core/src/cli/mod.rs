@@ -1,7 +1,7 @@
 //! CLI module - Command-line interface
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use log::info;
 
 /// RustStream CLI
@@ -67,45 +67,47 @@ pub fn parse_args() -> Cli {
 }
 
 /// Run probe command
-pub fn run_probe(path: &PathBuf, as_json: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_probe(path: &Path, as_json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let path_str = path.to_str().ok_or("Invalid path")?;
-    
+
     info!("Probing: {}", path_str);
-    
+
     let metadata = crate::probe::probe_full(path_str)?;
-    
+
     if as_json {
         println!("{}", serde_json::to_string_pretty(&metadata)?);
     } else {
         println!("File: {}", metadata.path);
         println!("Duration: {:.2}s", metadata.video.duration_secs);
-        println!("Video: {}x{} @ {:.2} fps ({})", 
-            metadata.video.width, metadata.video.height, 
+        println!("Video: {}x{} @ {:.2} fps ({})",
+            metadata.video.width, metadata.video.height,
             metadata.video.fps, metadata.video.codec);
-        
+
         if let Some(audio) = &metadata.audio {
-            println!("Audio: {} ({} Hz, {} channels)", 
+            println!("Audio: {} ({} Hz, {} channels)",
                 audio.codec, audio.sample_rate, audio.channels);
         }
     }
-    
+
     Ok(())
 }
 
 /// Run concat command
-pub fn run_concat(inputs: &[PathBuf], output: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_concat(inputs: &[PathBuf], output: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let input_paths: Vec<String> = inputs
         .iter()
         .filter_map(|p| p.to_str().map(String::from))
         .collect();
     
     let output_path = output.to_str().ok_or("Invalid output path")?;
-    
+
     info!("Concatenating {} files to {}", inputs.len(), output_path);
-    
+
     let config = crate::video::ConcatConfig {
         inputs: input_paths,
         output: output_path.to_string(),
+        codec: "libx264".to_string(),
+        crf: 23,
     };
     
     let result = crate::video::concat_videos(&config)?;
@@ -121,30 +123,32 @@ pub fn run_concat(inputs: &[PathBuf], output: &PathBuf) -> Result<(), Box<dyn st
 /// Run benchmark command
 pub fn run_benchmark(duration_secs: u64) -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
-    
+
     info!("Running benchmarks for {} seconds", duration_secs);
-    
+
+    // Allocate buffers ONCE outside the loop to avoid measuring allocation speed
+    let mut output = vec![0.0f32; 48000];
+    let input1 = vec![0.5f32; 48000];
+    let input2 = vec![0.3f32; 48000];
+    let inputs = [&input1[..], &input2[..]];
+    let volumes = [1.0f32, 1.0f32];
+
     let start = Instant::now();
     let mut iterations = 0u64;
-    
-    // Benchmark audio mixing
+
     while start.elapsed().as_secs() < duration_secs {
-        let mut output = vec![0.0f32; 48000];
-        let input1 = vec![0.5f32; 48000];
-        let input2 = vec![0.3f32; 48000];
-        
-        crate::audio::audio_mix(&mut output, &[&input1, &input2], &[1.0, 1.0]);
+        crate::audio::audio_mix(&mut output, &inputs, &volumes);
         iterations += 1;
     }
-    
+
     let elapsed = start.elapsed().as_secs_f64();
     let samples_per_sec = (iterations * 48000) as f64 / elapsed;
-    
+
     println!("Audio Mix Benchmark:");
     println!("  Iterations: {}", iterations);
     println!("  Duration: {:.2}s", elapsed);
     println!("  Samples/sec: {:.2}M", samples_per_sec / 1_000_000.0);
-    
+
     Ok(())
 }
 

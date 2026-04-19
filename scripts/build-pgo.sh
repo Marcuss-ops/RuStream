@@ -11,7 +11,7 @@
 
 set -e
 
-echo "=== VeloxNative PGO Build ==="
+echo "=== RustStream PGO Build ==="
 echo ""
 
 # Step 1: Build instrumented binary
@@ -19,7 +19,7 @@ echo "[1/4] Building instrumented binary..."
 RUSTFLAGS="-C profile-generate=/tmp/pgo-data" \
     cargo build --release --target-dir target/pgo-instrumented
 
-INSTRUMENTED_BINARY="target/pgo-instrumented/release/velox_video_processor"
+INSTRUMENTED_BINARY="target/pgo-instrumented/release/ruststream"
 
 if [ ! -f "$INSTRUMENTED_BINARY" ]; then
     echo "Error: Instrumented binary not found at $INSTRUMENTED_BINARY"
@@ -47,6 +47,8 @@ echo "Running profile collection..."
 if [ -f "$INSTRUMENTED_BINARY" ]; then
     # Run with --help to trigger initialization code paths
     "$INSTRUMENTED_BINARY" --help 2>/dev/null || true
+    # Run probe command
+    "$INSTRUMENTED_BINARY" probe --help 2>/dev/null || true
 fi
 
 echo "✓ Profile data collected in /tmp/pgo-data"
@@ -70,7 +72,7 @@ RUSTFLAGS="-C profile-use=/tmp/pgo-data/merged.profdata -C llvm-args=-pgo-warn-m
 echo ""
 echo "=== PGO Build Complete ==="
 echo ""
-echo "Optimized binary: target/release/velox_video_processor"
+echo "Optimized binary: target/release/ruststream"
 echo ""
 echo "Performance improvements:"
 echo "  - Hot paths are now optimized based on actual runtime behavior"
@@ -78,4 +80,4 @@ echo "  - Branch prediction is improved"
 echo "  - Code layout is optimized for your CPU's cache"
 echo ""
 echo "To verify PGO is working, check binary size (should be similar or larger):"
-echo "  ls -lh target/release/velox_video_processor"
+echo "  ls -lh target/release/ruststream"

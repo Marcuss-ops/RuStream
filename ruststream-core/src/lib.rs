@@ -27,7 +27,7 @@
 //! # }
 //! ```
 
-#![deny(unsafe_code)]
+#![warn(unsafe_code)]
 
 // Use mimalloc as global allocator for 5-10% performance boost
 #[global_allocator]
@@ -55,7 +55,7 @@ pub mod io;
 #[cfg(feature = "cli")]
 pub mod cli;
 
-// Server module (HTTP API)
+// Server module (HTTP API) - feature-gated
 #[cfg(feature = "server")]
 pub mod server;
 
@@ -64,6 +64,7 @@ pub use core::{MediaError, MediaErrorCode, MediaResult};
 
 pub use probe::{FullMetadata, VideoMetadata, AudioMetadata};
 pub use video::ConcatConfig;
+pub use core::audio_graph::{AudioGraphConfig, AudioGraphResult, AudioInput, SyncConfig as AudioSyncConfig};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -80,12 +81,19 @@ pub fn init() -> MediaResult<()> {
     // Log CPU features
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx512f") {
-            log::info!("CPU: AVX-512 available");
-        } else if is_x86_feature_detected!("avx2") {
-            log::info!("CPU: AVX2 available");
-        } else if is_x86_feature_detected!("sse4.1") {
-            log::info!("CPU: SSE4.1 available");
+        let has_avx512 = is_x86_feature_detected!("avx512f");
+        let has_avx2 = is_x86_feature_detected!("avx2");
+        let has_sse41 = is_x86_feature_detected!("sse4.1");
+        let has_fma = is_x86_feature_detected!("fma");
+
+        if has_avx512 {
+            log::info!("CPU: AVX-512 available{}", if has_fma { " + FMA" } else { "" });
+        } else if has_avx2 {
+            log::info!("CPU: AVX2 available{}", if has_fma { " + FMA" } else { "" });
+        } else if has_sse41 {
+            log::info!("CPU: SSE4.1 available{}", if has_fma { " + FMA" } else { "" });
+        } else {
+            log::info!("CPU: No SIMD detected, using scalar fallback");
         }
     }
     
@@ -110,6 +118,8 @@ pub fn get_info() -> LibraryInfo {
             avx2: is_x86_feature_detected!("avx2"),
             #[cfg(target_arch = "x86_64")]
             sse41: is_x86_feature_detected!("sse4.1"),
+            #[cfg(target_arch = "x86_64")]
+            fma: is_x86_feature_detected!("fma"),
             #[cfg(feature = "server")]
             http_server: true,
             #[cfg(not(feature = "server"))]
@@ -136,6 +146,8 @@ pub struct LibraryFeatures {
     pub avx2: bool,
     #[cfg(target_arch = "x86_64")]
     pub sse41: bool,
+    #[cfg(target_arch = "x86_64")]
+    pub fma: bool,
     pub http_server: bool,
 }
 

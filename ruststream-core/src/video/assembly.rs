@@ -201,8 +201,10 @@ pub fn build_assembly_audio_command(config: &AssemblyAudioConfig) -> Result<Vec<
     Ok(cmd)
 }
 
-/// Execute assembly audio baking using ffmpeg-next native bindings.
-/// This replaces the subprocess-based approach with direct FFmpeg API calls.
+/// Execute assembly audio baking.
+///
+/// Uses ffmpeg CLI with a pre-built filter_complex for mixing VO, music,
+/// and base audio with gate expressions.
 ///
 /// # Arguments
 /// * `config` - Assembly audio configuration
@@ -210,12 +212,7 @@ pub fn build_assembly_audio_command(config: &AssemblyAudioConfig) -> Result<Vec<
 /// # Returns
 /// * `Ok(output_path)` on success
 /// * `Err(MediaError)` on failure
-pub fn bake_assembly_audio_native(config: AssemblyAudioConfig) -> MediaResult<String> {
-    use ffmpeg_next as ff;
-    use ff::util::error::EAGAIN;
-
-    let _ = ff::init();
-
+pub fn bake_assembly_audio(config: AssemblyAudioConfig) -> MediaResult<String> {
     // Validate inputs
     if config.base_video_path.is_empty() {
         return Err(MediaError::new(MediaErrorCode::InvalidInput, "base_video_path is required"));
@@ -236,144 +233,12 @@ pub fn bake_assembly_audio_native(config: AssemblyAudioConfig) -> MediaResult<St
         }
     }
 
-    // Open input context for base video
-    let mut in_ctx = ff::format::input(&config.base_video_path)
-        .map_err(|e| MediaError::new(MediaErrorCode::DecodeFailed, format!("Cannot open base video: {}", e)))?;
-
-    // Find video and audio streams
-    let video_stream = in_ctx.streams().find(|s| s.parameters().medium() == ff::media::Type::Video);
-    let audio_stream = in_ctx.streams().find(|s| s.parameters().medium() == ff::media::Type::Audio);
-
-    let video_idx = video_stream.map(|s| s.index()).unwrap_or(0);
-    let audio_idx = audio_stream.map(|s| s.index());
-
-    // Setup decoder for base audio if present
-    let mut audio_decoder = audio_stream.and_then(|s| {
-        ff::codec::context::Context::from_parameters(s.parameters())
-            .ok()
-            .and_then(|c| c.decoder().audio().ok())
-    });
-
-    // Collect audio packets if base has audio
-    let base_audio_packets: Vec<ff::Packet> = if let Some(audio_idx) = audio_idx {
-        in_ctx.packets()
-            .filter_map(|(s, p)| if s.index() == audio_idx { Some(p) } else { None })
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    // Open optional voiceover input
-    let mut vo_packets: Vec<ff::Packet> = Vec::new();
-    let mut vo_decoder: Option<ff::decoder::Audio> = None;
-    if let Some(vo_path) = &config.voiceover_path {
-        if !vo_path.is_empty() && Path::new(vo_path).exists() {
-            if let Ok(mut vo_ctx) = ff::format::input(vo_path) {
-                if let Some(vo_stream) = vo_ctx.streams().find(|s| s.parameters().medium() == ff::media::Type::Audio) {
-                    if let Ok(dec) = ff::codec::context::Context::from_parameters(vo_stream.parameters())
-                        .and_then(|c| c.decoder().audio()) {
-                        vo_decoder = Some(dec);
-                        vo_packets = vo_ctx.packets()
-                            .filter_map(|(s, p)| if s.index() == vo_stream.index() { Some(p) } else { None })
-                            .collect();
-                    }
-                }
-            }
-        }
-    }
-
-    // Open optional music input
-    let mut music_packets: Vec<ff::Packet> = Vec::new();
-    let mut music_decoder: Option<ff::decoder::Audio> = None;
-    if let Some(music_path) = &config.music_path {
-        if !music_path.is_empty() && Path::new(music_path).exists() {
-            if let Ok(mut music_ctx) = ff::format::input(music_path) {
-                if let Some(music_stream) = music_ctx.streams().find(|s| s.parameters().medium() == ff::media::Type::Audio) {
-                    if let Ok(dec) = ff::codec::context::Context::from_parameters(music_stream.parameters())
-                        .and_then(|c| c.decoder().audio()) {
-                        music_decoder = Some(dec);
-                        music_packets = music_ctx.packets()
-                            .filter_map(|(s, p)| if s.index() == music_stream.index() { Some(p) } else { None })
-                            .collect();
-                    }
-                }
-            }
-        }
-    }
-
-    // Create output context
-    let mut out_ctx = ff::format::output(&config.output_path)
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Cannot create output: {}", e)))?;
-
-    // Add video stream (copy from base)
-    let mut ost_video = out_ctx.add_stream(ff::encoder::find(ff::codec::Id::H264)
-        .ok_or_else(|| MediaError::new(MediaErrorCode::EncodeFailed, "H264 encoder not found"))?)
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Add video stream: {}", e)))?;
-    let ost_video_idx = ost_video.index();
-
-    // Add audio stream (AAC encoded)
-    let audio_codec = ff::encoder::find(ff::codec::Id::AAC)
-        .ok_or_else(|| MediaError::new(MediaErrorCode::EncodeFailed, "AAC encoder not found"))?;
-    let mut ost_audio = out_ctx.add_stream(audio_codec)
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Add audio stream: {}", e)))?;
-    let ost_audio_idx = ost_audio.index();
-
-    // Setup audio encoder
-    let mut audio_enc = ff::codec::context::Context::new_with_codec(audio_codec)
-        .encoder().audio()
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Audio encoder setup: {}", e)))?;
-
-    let dst_fmt = ff::util::format::Sample::F32(ff::util::format::sample::Type::Planar);
-    let dst_layout = ff::channel_layout::ChannelLayout::STEREO;
-    audio_enc.set_rate(config.sample_rate as i32);
-    audio_enc.set_channel_layout(dst_layout);
-    audio_enc.set_format(dst_fmt);
-    audio_enc.set_time_base((1, config.sample_rate as i32));
-    audio_enc.set_bit_rate(192_000);
-
-    let mut audio_encoder = audio_enc.open_as(audio_codec)
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Audio encoder open: {}", e)))?;
-
-    ost_audio.set_parameters(&audio_encoder);
-
-    // Setup video encoder parameters (copy from input)
-    if let Some(video_stream) = video_stream {
-        if let Ok(video_params) = ff::codec::context::Context::from_parameters(video_stream.parameters()) {
-            let mut video_enc = video_params.encoder().video()
-                .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Video encoder setup: {}", e)))?;
-            
-            video_enc.set_width(video_params.width());
-            video_enc.set_height(video_params.height());
-            video_enc.set_format(video_params.format());
-            video_enc.set_time_base(video_stream.time_base());
-            video_enc.set_frame_rate(video_stream.avg_frame_rate());
-            
-            if let Ok(ve) = video_enc.open() {
-                ost_video.set_parameters(&ve);
-            }
-        }
-    }
-
-    // Write header
-    out_ctx.write_header()
-        .map_err(|e| MediaError::new(MediaErrorCode::EncodeFailed, format!("Write header: {}", e)))?;
-
-    // Build filter graph and process audio
-    // For now, use the filter_complex approach via ffmpeg CLI as fallback
-    // Full native implementation would require ff::filter::Graph setup
-    drop(in_ctx);
-    drop(out_ctx);
-    drop(audio_decoder);
-    drop(vo_decoder);
-    drop(music_decoder);
-    drop(audio_encoder);
-
-    // Fallback to CLI for complex filter graph
-    // TODO: Implement full native filter graph when ff::filter::Graph is stable
+    // Execute via CLI — full native FFmpeg filter graph requires ff::filter::Graph
+    // which is not stable. The CLI approach is robust and well-tested.
     bake_assembly_audio_cli(config)
 }
 
-/// Fallback CLI-based implementation
+/// CLI-based assembly audio baking
 fn bake_assembly_audio_cli(config: AssemblyAudioConfig) -> MediaResult<String> {
     let cmd = build_assembly_audio_command(&config)
         .map_err(|e| MediaError::new(MediaErrorCode::AudioResampleFailed, e))?;
@@ -404,8 +269,8 @@ fn bake_assembly_audio_cli(config: AssemblyAudioConfig) -> MediaResult<String> {
 }
 
 /// Execute assembly audio baking (alias for backward compatibility)
-pub fn bake_assembly_audio(config: AssemblyAudioConfig) -> Result<String, String> {
-    bake_assembly_audio_native(config).map_err(|e| e.to_string())
+pub fn bake_assembly_audio_legacy(config: AssemblyAudioConfig) -> Result<String, String> {
+    bake_assembly_audio(config).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

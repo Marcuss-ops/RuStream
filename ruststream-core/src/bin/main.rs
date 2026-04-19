@@ -42,15 +42,30 @@ fn main() -> ExitCode {
             }
         }
 
-        ruststream_core::cli::Command::Serve { port: _, host: _ } => {
+        #[allow(unused_variables)]
+        ruststream_core::cli::Command::Serve { port, host } => {
             #[cfg(feature = "server")]
             {
-                log::info!("Starting HTTP server on http://{}:{}", port, host);
+                log::info!("Starting HTTP server on http://{}:{}", host, port);
 
-                match ruststream_core::server::run_server(host, port) {
-                    Ok(()) => ExitCode::SUCCESS,
+                let config = ruststream_core::server::ServerConfig {
+                    host: host.clone(),
+                    port,
+                };
+
+                // Run server in tokio runtime
+                match tokio::runtime::Runtime::new() {
+                    Ok(rt) => {
+                        match rt.block_on(ruststream_core::server::start_server(config)) {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(e) => {
+                                error!("Server error: {}", e);
+                                ExitCode::from(3)
+                            }
+                        }
+                    }
                     Err(e) => {
-                        error!("Server error: {}", e);
+                        error!("Failed to create tokio runtime: {}", e);
                         ExitCode::from(3)
                     }
                 }

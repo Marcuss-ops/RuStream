@@ -69,10 +69,11 @@ impl Default for ClipProcessingConfig {
     }
 }
 
-/// Get file duration in seconds using MP4 atom parsing.
+/// Get file duration in seconds using full probe (cached if available).
 fn get_file_duration_sec(path: &str) -> Result<f64, String> {
-    crate::probe::probe_duration(path)
-        .ok_or_else(|| format!("Could not probe duration for: {}", path))
+    crate::probe::probe_full(path)
+        .map(|meta| meta.video.duration_secs)
+        .map_err(|e| format!("Could not probe duration for {}: {}", path, e))
 }
 
 /// Build the filter_complex for clip processing
@@ -292,11 +293,13 @@ mod tests {
     #[test]
     fn test_build_clip_processing_command() {
         // Create a temporary test file for duration probing
-        let test_file = "/tmp/test_clip_processing.mp4";
-        std::fs::write(test_file, b"fake mp4 content").unwrap();
-        
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_clip_processing.mp4");
+        let test_file_path = test_file.to_str().unwrap();
+        std::fs::write(test_file_path, b"fake mp4 content").unwrap();
+
         let config = ClipProcessingConfig {
-            input_path: test_file.to_string(),
+            input_path: test_file_path.to_string(),
             output_path: "output.mp4".to_string(),
             width: 1920,
             height: 1080,
@@ -304,13 +307,13 @@ mod tests {
             fade_in_sec: 0.2,
             ..Default::default()
         };
-        
+
         // This will fail because the file is not a valid MP4, but that's expected
         // The test is just checking that the function structure is correct
         let result = build_clip_processing_command(&config);
         assert!(result.is_err()); // Expected to fail with invalid MP4
-        
+
         // Clean up
-        let _ = std::fs::remove_file(test_file);
+        let _ = std::fs::remove_file(test_file_path);
     }
 }

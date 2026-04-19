@@ -1,8 +1,10 @@
 //! Audio mixing utilities for FFmpeg
-//! 
-//! This module provides both:
-//! - Filter string builders (for FFmpeg CLI usage)
-//! - Native audio baking (using ac-ffmpeg for direct processing)
+//!
+//! This module provides filter string builders for generating FFmpeg
+//! audio mixing filter expressions (amix, acrossfade, volume).
+//!
+//! Actual audio processing is handled by `audio_bake.rs` which invokes
+//! FFmpeg via subprocess.
 
 // ============================================================================
 // Filter String Builders (existing functionality)
@@ -93,7 +95,7 @@ pub fn build_background_music_filter(
     
     // BGM: loop + trim + fade
     let mut bgm_parts = Vec::new();
-    bgm_parts.push(format!("aloop=loop=-1:size=2e9:start=0"));
+    bgm_parts.push("aloop=loop=-1:size=2e9:start=0".to_string());
     bgm_parts.push(format!("atrim=0:{},setpts=PTS-STARTPTS", duration_sec));
     if fade_in_sec > 0.0 {
         bgm_parts.push(format!("afade=t=in:st=0:d={}", fade_in_sec));
@@ -127,10 +129,10 @@ pub fn build_audio_pitch_filter(semitones: f64) -> String {
 }
 
 /// Generate FFmpeg command for audio concatenation
-pub fn build_concat_audio_filter(inputs: &[String], output_has_video: bool) -> String {
+pub fn build_concat_audio_filter(inputs: &[String], _output_has_video: bool) -> String {
     let n = inputs.len();
     let mut filter = String::with_capacity(n * 6 + 30); // "[N:a]" per input + concat
-    
+
     for (i, _input) in inputs.iter().enumerate() {
         if i > 0 {
             filter.push_str(&format!("[a{}]", i));
@@ -139,11 +141,7 @@ pub fn build_concat_audio_filter(inputs: &[String], output_has_video: bool) -> S
         }
     }
 
-    if output_has_video {
-        filter.push_str(&format!("concat=n={}:v=0:a=1[aout]", n));
-    } else {
-        filter.push_str(&format!("concat=n={}:v=0:a=1[aout]", n));
-    }
+    filter.push_str(&format!("concat=n={}:v=0:a=1[aout]", n));
 
     filter
 }
