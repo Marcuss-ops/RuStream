@@ -24,9 +24,19 @@ Today the repository already includes:
 - a CLI for probing, concatenation, benchmarking, and library info
 - an optional HTTP API layer with Axum
 - SIMD-oriented audio processing components
-- integration tests, documentation, and CI workflows
+- integration tests, fixture layout scaffolding, documentation, and CI workflows
 
 Some processing paths still rely on FFmpeg development libraries at build time, so the project is not yet fully independent from FFmpeg.
+
+## CI at a glance
+
+The public CI workflow currently validates:
+- formatting with `cargo fmt --check`
+- linting with `cargo clippy --all-targets --all-features -D warnings`
+- tests and doc tests
+- release builds and all-features builds
+- multi-target Linux builds
+- optional coverage and tagged benchmarks
 
 ## Project layout
 
@@ -41,7 +51,7 @@ RuStream/
 │   │   ├── filters/        # FFmpeg filter builders
 │   │   └── render_graph/   # Render pipeline orchestration
 │   ├── benches/            # Performance benchmarks
-│   └── tests/              # Integration tests
+│   └── tests/              # Integration tests and fixture layout
 ├── docs/                   # Documentation and archived project notes
 ├── scripts/                # Build and optimization scripts
 └── .github/workflows/      # CI pipeline
@@ -90,6 +100,12 @@ ruststream benchmark
 # Display library info
 ruststream info
 ```
+
+## Tests and fixtures
+
+- smoke and integration tests live in `ruststream-core/tests/`
+- fixture planning and conventions live in `ruststream-core/tests/fixtures/`
+- real media fixtures can be added incrementally without cluttering the repository root
 
 ## Development
 
