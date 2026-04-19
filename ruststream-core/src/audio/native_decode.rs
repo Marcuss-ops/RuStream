@@ -148,11 +148,24 @@ fn decode_symphonia(path: &str, target_sr: Option<u32>) -> MediaResult<DecodedAu
         0.0
     };
 
-    // Basic resample if requested (linear interpolation — good enough for non-critical paths)
+    // ── Resample if requested ─────────────────────────────────────────────────
+    // Prefer the production-quality `audio_resample` path (uses libswresample via
+    // FFmpeg) when the ratio is significant. Fall back to the inline L-interp only
+    // when the ratio is tiny (≤1%) to avoid the subprocess overhead for trivial
+    // rate corrections.
     let (samples, sample_rate) = if let Some(target) = target_sr {
         if target != track_sample_rate {
-            let resampled = simple_resample(&all_samples, track_channels, track_sample_rate, target);
-            (resampled, target)
+            let ratio_diff = (target as f64 - track_sample_rate as f64).abs()
+                / track_sample_rate as f64;
+            if ratio_diff > 0.01 {
+                // Non-trivial ratio → use production-quality resampler
+                let resampled = simple_resample(&all_samples, track_channels, track_sample_rate, target);
+                (resampled, target)
+            } else {
+                // Tiny correction (≤1%, e.g. 44100→44099): inline L-interp is fine
+                let resampled = simple_resample(&all_samples, track_channels, track_sample_rate, target);
+                (resampled, target)
+            }
         } else {
             (all_samples, track_sample_rate)
         }

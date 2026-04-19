@@ -234,16 +234,19 @@ pub fn bake_master_audio(config: AudioBakeConfig) -> Result<(), String> {
     // Build command
     let cmd = build_audio_bake_command(&config)?;
 
-    // Execute
-    let output = std::process::Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .output()
-        .map_err(|e| format!("Failed to execute ffmpeg: {}", e))?;
+    // Execute via the tracked FfmpegCommand wrapper.
+    // This automatically increments FAST_COUNTERS.subprocess_count and provides
+    // uniform error handling across all FFmpeg invocations.
+    use crate::io::subprocess::FfmpegCommand;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg failed (exit {}): {}", output.status, stderr));
-    }
+    // cmd[0] is "ffmpeg" — FfmpegCommand adds it automatically, skip it
+    let args = &cmd[1..];
+
+    FfmpegCommand::new()
+        .args(args.iter().cloned())
+        .output_file(config.output_path.clone())
+        .output()
+        .map_err(|e| format!("FFmpeg audio bake failed: {}", e))?;
 
     // Verify output
     if !Path::new(&config.output_path).exists() {

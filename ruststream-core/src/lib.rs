@@ -72,7 +72,7 @@ pub use video::{ConcatConfig, fused_concat, fused_concat_batch, FusedConcatResul
 
 // Audio
 pub use core::audio_graph::{AudioGraphConfig, AudioGraphResult, AudioInput, SyncConfig as AudioSyncConfig};
-pub use audio::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES};
+pub use audio::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES, LARGE_SAMPLES};
 pub use audio::{DecodedAudio, decode_audio_file, native_decoding_available};
 
 // Filters / overlay
@@ -82,9 +82,10 @@ pub use filters::{OverlayAsset, OverlayCache, OverlayCacheStats, global_overlay_
 pub use io::{FfmpegCommand, ffmpeg_available, ffmpeg_version, temp_dir, temp_file};
 pub use io::{prefetch, prefetch_paths, prefetch_batch, cpu_prefetch};
 
-// Scheduler + Thread pool
+// Scheduler + Thread pool + Instrumentation
 pub use core::{Job, probe_scheduled, run_scheduled, ConcatJob, concat_scheduled};
 pub use core::{init_thread_pool, pool_info, worker_count};
+pub use core::{FAST_COUNTERS, FastCounters, Profiler, StageTimer, StageMetrics, DriftMetrics, ProfilingReport};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

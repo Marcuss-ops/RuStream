@@ -11,3 +11,4 @@ pub mod thread_pool;
 pub use errors::{MediaError, MediaErrorCode, MediaResult};
 pub use batch_scheduler::{Job, probe_scheduled, run_scheduled, ConcatJob, concat_scheduled};
 pub use thread_pool::{init_thread_pool, pool_info, worker_count, PoolInfo, ThreadPoolConfig};
+pub use instrumentation::{FAST_COUNTERS, FastCounters, Profiler, StageTimer, StageMetrics, DriftMetrics, ProfilingReport};

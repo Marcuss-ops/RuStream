@@ -8,20 +8,20 @@
 //! so each asset is decoded **at most once per process lifetime**.
 //!
 //! # Memory model
-//! The cache lives in a global `DashMap`-like structure (backed by `parking_lot`
-//! RwLock on a `HashMap`). It is bounded by `max_entries` to prevent unbounded
-//! growth on servers handling thousands of different overlays.
+//! The cache lives in a global `parking_lot::RwLock<HashMap>` with a
+//! `VecDeque` insertion-order tracker for true LRU eviction.
+//! Callers borrow `Arc<OverlayAsset>` — zero copies on hit.
 //!
 //! # Format
 //! Pixel data is stored as raw `Vec<u8>` in **RGBA8** layout, with dimensions
 //! stored alongside. Callers borrow `Arc<OverlayAsset>` — zero copies on hit.
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
+use crate::probe::cache_key;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use crate::probe::cache_key;
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use std::sync::Arc;
 
 /// Maximum number of overlay assets kept in memory simultaneously.
 const DEFAULT_MAX_ENTRIES: usize = 256;
@@ -60,16 +60,65 @@ impl OverlayAsset {
 pub struct OverlayCacheStats {
     pub hits: u64,
     pub misses: u64,
+    pub evictions: u64,
     pub entries: usize,
     pub total_bytes: usize,
 }
 
-/// Process-global overlay asset cache.
+/// Inner state guarded by a single RwLock.
+struct CacheState {
+    store: HashMap<String, Arc<OverlayAsset>>,
+    /// LRU order: front = oldest (next eviction candidate), back = most recently used.
+    order: VecDeque<String>,
+}
+
+impl CacheState {
+    fn new() -> Self {
+        Self {
+            store: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    /// Touch an existing key — moves it to the back (most-recently-used end).
+    fn touch(&mut self, key: &str) {
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            self.order.remove(pos);
+            self.order.push_back(key.to_string());
+        }
+    }
+
+    /// Evict the least-recently-used entry. Returns `true` if something was evicted.
+    fn evict_lru(&mut self) -> bool {
+        if let Some(lru_key) = self.order.pop_front() {
+            self.store.remove(&lru_key);
+            log::debug!("overlay cache EVICT LRU: {}", lru_key);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Insert a new entry, evicting LRU if at capacity.
+    fn insert(&mut self, key: String, asset: Arc<OverlayAsset>, max_entries: usize) -> bool {
+        let evicted = if self.store.len() >= max_entries {
+            self.evict_lru()
+        } else {
+            false
+        };
+        self.order.push_back(key.clone());
+        self.store.insert(key, asset);
+        evicted
+    }
+}
+
+/// Process-global overlay asset cache with true LRU eviction.
 pub struct OverlayCache {
-    store:       RwLock<HashMap<String, Arc<OverlayAsset>>>,
+    state: RwLock<CacheState>,
     max_entries: usize,
-    hits:        std::sync::atomic::AtomicU64,
-    misses:      std::sync::atomic::AtomicU64,
+    hits: std::sync::atomic::AtomicU64,
+    misses: std::sync::atomic::AtomicU64,
+    evictions: std::sync::atomic::AtomicU64,
 }
 
 impl OverlayCache {
@@ -81,14 +130,15 @@ impl OverlayCache {
     /// Create a cache with a custom maximum entry count.
     pub fn with_capacity(max_entries: usize) -> Self {
         Self {
-            store: RwLock::new(HashMap::new()),
+            state: RwLock::new(CacheState::new()),
             max_entries,
-            hits:   std::sync::atomic::AtomicU64::new(0),
+            hits: std::sync::atomic::AtomicU64::new(0),
             misses: std::sync::atomic::AtomicU64::new(0),
+            evictions: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
-    /// Get or decode an overlay asset.
+    /// Get or decode an overlay asset (LRU-aware).
     ///
     /// Returns `Arc<OverlayAsset>` — callers can hold the arc across frames
     /// without additional locking.
@@ -105,18 +155,23 @@ impl OverlayCache {
     {
         let key = cache_key(path);
 
-        // Fast read path
+        // ── Fast read path ────────────────────────────────────────────────────
         {
-            let guard = self.store.read();
-            if let Some(asset) = guard.get(&key) {
+            let guard = self.state.read();
+            if let Some(asset) = guard.store.get(&key) {
                 self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 log::debug!("overlay cache HIT: {}", path);
-                return Ok(Arc::clone(asset));
+                let asset = Arc::clone(asset);
+                drop(guard);
+                // Promote to MRU — needs write lock (do it outside read lock)
+                self.state.write().touch(&key);
+                return Ok(asset);
             }
         }
 
-        // Cache miss — decode
-        self.misses.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // ── Cache miss — decode ───────────────────────────────────────────────
+        self.misses
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         log::debug!("overlay cache MISS: {}", path);
 
         if !Path::new(path).exists() {
@@ -135,16 +190,13 @@ impl OverlayCache {
             cache_key: key.clone(),
         });
 
-        // Write — evict oldest entry if at capacity
-        let mut guard = self.store.write();
-        if guard.len() >= self.max_entries {
-            // LRU-lite: remove any one entry to stay under limit
-            if let Some(evict_key) = guard.keys().next().cloned() {
-                guard.remove(&evict_key);
-                log::debug!("overlay cache EVICT: {}", evict_key);
-            }
+        // ── Write with LRU eviction ───────────────────────────────────────────
+        let mut guard = self.state.write();
+        let evicted = guard.insert(key, Arc::clone(&asset), self.max_entries);
+        if evicted {
+            self.evictions
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        guard.insert(key, Arc::clone(&asset));
 
         Ok(asset)
     }
@@ -167,22 +219,30 @@ impl OverlayCache {
     /// Invalidate a single entry (e.g. after an asset is updated on disk).
     pub fn invalidate(&self, path: &str) {
         let key = cache_key(path);
-        self.store.write().remove(&key);
+        let mut guard = self.state.write();
+        if guard.store.remove(&key).is_some() {
+            if let Some(pos) = guard.order.iter().position(|k| k == &key) {
+                guard.order.remove(pos);
+            }
+        }
     }
 
     /// Clear the entire cache.
     pub fn clear(&self) {
-        self.store.write().clear();
+        let mut guard = self.state.write();
+        guard.store.clear();
+        guard.order.clear();
     }
 
     /// Cache statistics.
     pub fn stats(&self) -> OverlayCacheStats {
-        let guard = self.store.read();
-        let total_bytes: usize = guard.values().map(|a| a.byte_size()).sum();
+        let guard = self.state.read();
+        let total_bytes: usize = guard.store.values().map(|a| a.byte_size()).sum();
         OverlayCacheStats {
-            hits:        self.hits.load(std::sync::atomic::Ordering::Relaxed),
-            misses:      self.misses.load(std::sync::atomic::Ordering::Relaxed),
-            entries:     guard.len(),
+            hits: self.hits.load(std::sync::atomic::Ordering::Relaxed),
+            misses: self.misses.load(std::sync::atomic::Ordering::Relaxed),
+            evictions: self.evictions.load(std::sync::atomic::Ordering::Relaxed),
+            entries: guard.store.len(),
             total_bytes,
         }
     }
@@ -194,7 +254,7 @@ impl Default for OverlayCache {
     }
 }
 
-/// Process-global singleton overlay cache (256 entries max).
+/// Process-global singleton overlay cache (256 entries max, LRU eviction).
 pub fn global_overlay_cache() -> &'static OverlayCache {
     static CACHE: std::sync::OnceLock<OverlayCache> = std::sync::OnceLock::new();
     CACHE.get_or_init(OverlayCache::new)
@@ -203,20 +263,20 @@ pub fn global_overlay_cache() -> &'static OverlayCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::io::Write;
+    use tempfile::TempDir;
 
     fn make_fake_png(dir: &TempDir, name: &str) -> String {
-        // Write a tiny valid 1x1 RGBA raw "asset" (not real PNG — decoder is mocked)
         let path = dir.path().join(name);
-        std::fs::File::create(&path).unwrap()
-            .write_all(&[137, 80, 78, 71]).unwrap(); // PNG magic bytes
+        std::fs::File::create(&path)
+            .unwrap()
+            .write_all(&[137, 80, 78, 71])
+            .unwrap();
         path.to_string_lossy().into_string()
     }
 
     fn mock_decoder(path: &str) -> crate::core::MediaResult<(u32, u32, Vec<u8>)> {
         let _ = path;
-        // 2×2 RGBA: all red
         Ok((2, 2, vec![255, 0, 0, 255; 4]))
     }
 
@@ -236,6 +296,28 @@ mod tests {
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hits, 1);
         assert_eq!(stats.entries, 1);
+    }
+
+    #[test]
+    fn test_overlay_cache_lru_eviction() {
+        // Create cache with capacity 2; insert 3 assets — first should be evicted
+        let cache = OverlayCache::with_capacity(2);
+        let tmp = TempDir::new().unwrap();
+
+        let p1 = make_fake_png(&tmp, "a.png");
+        let p2 = make_fake_png(&tmp, "b.png");
+        let p3 = make_fake_png(&tmp, "c.png");
+
+        cache.get_or_decode(&p1, mock_decoder).unwrap();
+        cache.get_or_decode(&p2, mock_decoder).unwrap();
+        // Touch p1 to make it MRU → p2 becomes LRU
+        cache.get_or_decode(&p1, mock_decoder).unwrap();
+        // Insert p3 → should evict p2 (LRU)
+        cache.get_or_decode(&p3, mock_decoder).unwrap();
+
+        let stats = cache.stats();
+        assert_eq!(stats.entries, 2);
+        assert_eq!(stats.evictions, 1);
     }
 
     #[test]
@@ -265,7 +347,6 @@ mod tests {
     fn test_global_overlay_cache_singleton() {
         let c1 = global_overlay_cache();
         let c2 = global_overlay_cache();
-        // Must be the same address
         assert!(std::ptr::eq(c1, c2));
     }
 }

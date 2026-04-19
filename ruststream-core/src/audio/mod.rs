@@ -14,5 +14,5 @@ pub mod native_decode;
 // Re-export
 pub use gate_utils::{build_gate_expr_from_ranges, build_intro_only_gate_expr, AudioGateRange};
 pub use hot_kernels::{audio_mix, apply_volume};
-pub use buffer_pool::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES};
+pub use buffer_pool::{PooledBuffer, audio_mix_pooled, FRAME_SAMPLES, BLOCK_SAMPLES, LARGE_SAMPLES};
 pub use native_decode::{DecodedAudio, decode_audio_file, native_decoding_available};
