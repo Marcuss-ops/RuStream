@@ -33,14 +33,13 @@ Some paths use native Rust modules directly, while other parts still depend on F
 ## Build requirements
 
 - Rust 1.75+
-- FFmpeg 5.0+ development libraries
-- Linux, macOS, or Windows via supported native toolchains or WSL
+- FFmpeg development libraries
+- Linux, macOS, or Windows via supported native toolchains
 
 ### Build from source
 
 ```bash
-git clone https://github.com/Marcuss-ops/RuStream.git
-cd RuStream/ruststream-core
+cd ruststream-core
 cargo build --release
 ```
 
